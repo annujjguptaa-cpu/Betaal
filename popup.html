@@ -162,6 +162,42 @@
       height: auto;
       border-radius: 4px;
       border: 1px solid #475569;
+      cursor: zoom-in;
+      transition: transform 0.2s;
+    }
+    .thumb-card img:hover {
+      transform: scale(1.03);
+      border-color: #38bdf8;
+    }
+
+    /* Modal Image Zoom Overlay */
+    .image-modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15, 23, 42, 0.95);
+      padding: 16px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .image-modal img {
+      max-width: 100%;
+      max-height: 80vh;
+      border-radius: 8px;
+      border: 2px solid #38bdf8;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .image-modal-close {
+      margin-top: 12px;
+      background: #38bdf8;
+      color: #0f172a;
+      border: none;
+      padding: 6px 16px;
+      border-radius: 4px;
+      font-weight: bold;
+      cursor: pointer;
     }
 
     /* Detection Table */
@@ -234,6 +270,12 @@
 
   <div id="status-list"></div>
   <div id="debug-panel"></div>
+
+  <!-- Image Zoom Modal -->
+  <div id="image-modal" class="image-modal">
+    <img id="modal-img" src="" alt="Enlarged View" />
+    <button class="image-modal-close" id="close-modal-btn">Close Zoom</button>
+  </div>
 
   <script src="node_modules/tesseract.js/dist/tesseract.min.js"></script>
   <script src="node_modules/onnxruntime-web/dist/ort.min.js"></script>

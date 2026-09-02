@@ -113,7 +113,8 @@ document.getElementById('run-agent-btn').addEventListener('click', async () => {
     });
 
     if (!execRes || !execRes.success) {
-      throw new Error(execRes ? execRes.error : 'Action execution failed on target page.');
+      const detail = execRes ? execRes.error : 'Action execution failed on target page.';
+      throw new Error(detail);
     }
     const execTime = Math.round(performance.now() - execStart);
     addStatus(`✅ [5/6] Action executed on active page (${execTime} ms)`);
@@ -137,15 +138,31 @@ document.getElementById('run-agent-btn').addEventListener('click', async () => {
     thumbRow.className = 'thumbnails-row';
     thumbRow.innerHTML = `
       <div class="thumb-card">
-        <span>Original Screen</span>
-        <img src="${pipelineRes.originalImage}" alt="Original Screenshot" />
+        <span>Original Screen (Click to Zoom)</span>
+        <img id="thumb-orig" src="${pipelineRes.originalImage}" alt="Original Screenshot" />
       </div>
       <div class="thumb-card">
-        <span>Redacted Screen (Sent)</span>
-        <img src="${pipelineRes.redactedImage}" alt="Redacted Screenshot" />
+        <span>Redacted Screen (Click to Zoom)</span>
+        <img id="thumb-redacted" src="${pipelineRes.redactedImage}" alt="Redacted Screenshot" />
       </div>
     `;
     debugPanel.appendChild(thumbRow);
+
+    // Wire Click-to-Zoom Modal
+    const modal = document.getElementById('image-modal');
+    const modalImg = document.getElementById('modal-img');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+
+    const openZoom = (src) => {
+      modalImg.src = src;
+      modal.style.display = 'flex';
+    };
+
+    document.getElementById('thumb-orig').addEventListener('click', () => openZoom(pipelineRes.originalImage));
+    document.getElementById('thumb-redacted').addEventListener('click', () => openZoom(pipelineRes.redactedImage));
+
+    closeModalBtn.addEventListener('click', () => { modal.style.display = 'none'; });
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
 
     // Render Detection Audit Table (WITHOUT leaking raw PII text)
     const tableHeader = `
