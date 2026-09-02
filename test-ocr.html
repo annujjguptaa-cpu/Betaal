@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Betaal - Standalone OCR & PII Verification</title>
+  <style>
+    body {
+      font-family: monospace;
+      background-color: #1e1e1e;
+      color: #00ff66;
+      padding: 20px;
+    }
+    .test-box {
+      background: #252526;
+      border: 1px solid #333;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 6px;
+    }
+    #canvas-container {
+      position: relative;
+      margin-top: 15px;
+    }
+    canvas {
+      border: 1px solid #555;
+      max-width: 100%;
+    }
+    .pass { color: #00ff66; }
+    .fail { color: #ff3333; }
+    pre { color: #dcdcdc; }
+  </style>
+
+  <!-- Load dependencies for standalone browser testing -->
+  <script src="node_modules/tesseract.js/dist/tesseract.min.js"></script>
+  <script src="node_modules/onnxruntime-web/dist/ort.min.js"></script>
+  <script src="extension/detection/ocr.js"></script>
+  <script src="extension/detection/pii-patterns.js"></script>
+  <script src="extension/detection/pii-detector.js"></script>
+  <script src="extension/detection/vit-classifier.js"></script>
+  <script src="extension/detection/face-detect.js"></script>
+  <script src="extension/redaction/redact.js"></script>
+</head>
+<body>
+
+  <h1>Betaal Detection & Redaction Verification Suite</h1>
+
+  <div class="test-box">
+    <h3>Prompt 11: Pattern Verification</h3>
+    <div id="prompt11-results">Running classifyPII tests...</div>
+  </div>
+
+  <div class="test-box">
+    <h3>Prompt 9 & 10: Tesseract OCR Bounding Box Extraction</h3>
+    <button id="run-ocr-btn">Run OCR Test on Sample Canvas</button>
+    <div id="ocr-status">Click button to generate canvas and run OCR...</div>
+    <div id="canvas-container"></div>
+  </div>
+
+  <div class="test-box">
+    <h3>Prompt 13 & 14: ViT Screen Classifier & Decision Logic</h3>
+    <button id="test-vit-btn">Classify Sample Screen</button>
+    <div id="vit-status">Click button to run classification test...</div>
+  </div>
+
+  <div class="test-box">
+    <h3>Prompt 15 & 16: Face Detection & NMS Verification</h3>
+    <button id="test-face-btn">Detect Faces on Test Canvas</button>
+    <div id="face-status">Click button to run face detection...</div>
+    <div id="face-container"></div>
+  </div>
+
+  <div class="test-box">
+    <h3>Prompt 17 & 18: Canvas Redaction (Black-Fill & Face Pixelation)</h3>
+    <button id="test-redaction-btn">Apply Redactions (Blackfill PII + Pixelate Face)</button>
+    <div id="redaction-status">Click button to apply redactions...</div>
+    <div id="redaction-container"></div>
+  </div>
+
+  <script>
+    // --- PROMPT 11 UNIT TESTS ---
+    const testCases = [
+      { input: '2345 6789 0123', expected: 'aadhaar' },
+      { input: '+91 91234 56789', expected: 'phone' },
+      { input: 'ABCDE1234F', expected: 'pan' },
+      { input: 'test@example.com', expected: 'email' },
+      { input: '45 MG Road, Sector 12', expected: 'address' },
+      { input: 'Water Supply', expected: null },
+      { input: 'Submit', expected: null }
+    ];
+
+    let p11Html = '<ul>';
+    let p11Passed = true;
+    testCases.forEach(tc => {
+      const res = classifyPII(tc.input);
+      const pass = res === tc.expected;
+      if (!pass) p11Passed = false;
+      p11Html += `<li>Input: "${tc.input}" -> Got: <b>${res}</b> | Expected: <b>${tc.expected}</b> [<span class="${pass?'pass':'fail'}">${pass?'PASS':'FAIL'}</span>]</li>`;
+    });
+    p11Html += '</ul>';
+    document.getElementById('prompt11-results').innerHTML = p11Html;
+
+    // --- PROMPT 9 & 10 OCR & VISUALIZATION TEST ---
+    document.getElementById('run-ocr-btn').addEventListener('click', async () => {
+      const status = document.getElementById('ocr-status');
+      status.textContent = 'Generating sample canvas with PII text...';
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 600;
+      canvas.height = 300;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#000000';
+      ctx.font = '24px Arial';
+      ctx.fillText('Aadhaar: 2345 6789 0123', 40, 60);
+      ctx.fillText('Phone: +91 91234 56789', 40, 120);
+      ctx.fillText('Category: Water Supply', 40, 180);
+      ctx.fillText('Address: Sector 12', 40, 240);
+
+      const dataUrl = canvas.toDataURL('image/png');
+
+      status.textContent = 'Running Tesseract.js OCR... (please wait)';
+      try {
+        const rawRes = await runRawOCR(dataUrl);
+        console.log('Prompt 9 - Raw Tesseract Result Object:', rawRes);
+
+        const regions = await extractTextRegions(dataUrl);
+        console.log('Prompt 10 - Extracted Text Regions:', regions);
+
+        const piiDetected = await detectSensitivePII(dataUrl);
+        console.log('Prompt 12 - Detected Sensitive PII:', piiDetected);
+
+        regions.forEach(r => {
+          ctx.strokeStyle = '#ff0000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(r.boundingBox.x, r.boundingBox.y, r.boundingBox.width, r.boundingBox.height);
+        });
+
+        const container = document.getElementById('canvas-container');
+        container.innerHTML = '';
+        container.appendChild(canvas);
+
+        status.innerHTML = `<span class="pass">OCR Completed Successfully!</span><br>
+        - Total word regions extracted: <b>${regions.length}</b><br>
+        - Sensitive PII detected: <b>${piiDetected.length}</b>`;
+      } catch (err) {
+        status.innerHTML = `<span class="fail">OCR Error: ${err.message}</span>`;
+      }
+    });
+
+    // --- PROMPT 13 & 14 ViT CLASSIFIER TEST ---
+    document.getElementById('test-vit-btn').addEventListener('click', async () => {
+      const status = document.getElementById('vit-status');
+      status.textContent = 'Running ViT Screen Classification...';
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 300;
+      canvas.height = 300;
+      const dataUrl = canvas.toDataURL();
+
+      const result = await classifyScreenType(dataUrl, { hasPII: true, hasFace: true });
+      status.innerHTML = `<span class="pass">Screen Type: <b>${result.category}</b></span> (Inference time: ${result.inferenceTimeMs} ms)`;
+    });
+
+    // --- PROMPT 15 & 16 FACE DETECTION TEST ---
+    document.getElementById('test-face-btn').addEventListener('click', async () => {
+      const status = document.getElementById('face-status');
+      status.textContent = 'Running Face Detector...';
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 400;
+      canvas.height = 400;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, 400, 400);
+
+      // Draw face placeholder
+      ctx.fillStyle = '#94a3b8';
+      ctx.beginPath();
+      ctx.arc(200, 290, 40, 0, Math.PI * 2);
+      ctx.fill();
+
+      const dataUrl = canvas.toDataURL('image/png');
+      const faces = await detectFaces(dataUrl);
+
+      faces.forEach(f => {
+        ctx.strokeStyle = '#00ff66';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(f.boundingBox.x, f.boundingBox.y, f.boundingBox.width, f.boundingBox.height);
+      });
+
+      const container = document.getElementById('face-container');
+      container.innerHTML = '';
+      container.appendChild(canvas);
+
+      status.innerHTML = `<span class="pass">Detected ${faces.length} face(s) above 0.5 confidence after NMS.</span>`;
+    });
+
+    // --- PROMPT 17 & 18 REDACTION TEST ---
+    document.getElementById('test-redaction-btn').addEventListener('click', async () => {
+      const status = document.getElementById('redaction-status');
+      status.textContent = 'Applying redactions...';
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 500;
+      canvas.height = 300;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 500, 300);
+      ctx.fillStyle = '#000000';
+      ctx.font = '20px Arial';
+      ctx.fillText('Aadhaar: 2345 6789 0123', 30, 50);
+
+      // Draw face
+      ctx.fillStyle = '#ffcc99';
+      ctx.beginPath();
+      ctx.arc(250, 180, 50, 0, Math.PI * 2);
+      ctx.fill();
+
+      const dataUrl = canvas.toDataURL('image/png');
+
+      const regions = [
+        { boundingBox: { x: 120, y: 30, width: 220, height: 30 }, method: 'blackfill' },
+        { boundingBox: { x: 190, y: 120, width: 120, height: 120 }, method: 'blur', pixelSize: 10 }
+      ];
+
+      const redactedUrl = await redactImage(dataUrl, regions);
+
+      const img = new Image();
+      img.src = redactedUrl;
+      img.style.border = '1px solid #00ff66';
+      img.style.marginTop = '10px';
+
+      const container = document.getElementById('redaction-container');
+      container.innerHTML = '';
+      container.appendChild(img);
+
+      status.innerHTML = `<span class="pass">Redactions applied successfully! (PII: Solid Blackfill, Face: Irreversible Block Pixelation)</span>`;
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,290 @@
+<!--
+  GROUND-TRUTH PII LIST:
+  - Full Name: Rohan Verma
+  - Aadhaar Number: 2345 6789 0123
+  - Phone Number: +91 91234 56789
+  - Address: 45 MG Road, Sector 12
+  - Pin Code: 560034
+  - Grievance Category: Water Supply
+  - Grievance Description: No water supply in our area for the past 5 days.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>National Citizen Grievance Portal</title>
+  <style>
+    :root {
+      --primary-blue: #003366;
+      --accent-blue: #0056b3;
+      --bg-grey: #f4f6f9;
+      --border-color: #cccccc;
+      --text-dark: #333333;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background-color: var(--bg-grey);
+      color: var(--text-dark);
+      line-height: 1.6;
+      padding-bottom: 40px;
+    }
+
+    header {
+      background-color: var(--primary-blue);
+      color: #ffffff;
+      padding: 20px 40px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .emblem-icon {
+      width: 48px;
+      height: 48px;
+      background-color: #ffffff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--primary-blue);
+      font-weight: bold;
+      font-size: 24px;
+      border: 2px solid #ff9933;
+    }
+
+    .header-text h1 {
+      font-size: 1.6rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .header-text p {
+      font-size: 0.85rem;
+      color: #e2e8f0;
+    }
+
+    .container {
+      max-width: 750px;
+      margin: 30px auto;
+      padding: 0 20px;
+    }
+
+    .card {
+      background: #ffffff;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      border: 1px solid #e1e4e8;
+      margin-bottom: 24px;
+    }
+
+    .card h2 {
+      font-size: 1.25rem;
+      color: var(--primary-blue);
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 8px;
+      margin-bottom: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-group label {
+      display: block;
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 6px;
+      color: #444444;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 0 3px rgba(0, 86, 179, 0.15);
+    }
+
+    textarea.form-control {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    button#submit-grievance-btn {
+      background-color: var(--primary-blue);
+      color: white;
+      padding: 12px 24px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      width: 100%;
+      transition: background-color 0.2s;
+    }
+
+    button#submit-grievance-btn:hover {
+      background-color: var(--accent-blue);
+    }
+
+    /* Verification Tile Styling */
+    .verification-card {
+      background: #ffffff;
+      padding: 24px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      border: 1px solid #e1e4e8;
+    }
+
+    .verification-card h2 {
+      font-size: 1.1rem;
+      color: var(--primary-blue);
+      margin-bottom: 14px;
+    }
+
+    .video-container {
+      width: 100%;
+      max-width: 320px;
+      height: 240px;
+      background-color: #1e293b;
+      border: 2px dashed var(--border-color);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      margin: 0 auto;
+    }
+
+    #webcam-feed {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    #webcam-fallback {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="emblem-icon">🏛️</div>
+    <div class="header-text">
+      <h1>National Citizen Grievance Portal</h1>
+      <p>Government of India • Ministry of Public Grievances</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Grievance Form Card -->
+    <div class="card">
+      <h2>Lodge a Grievance</h2>
+      <form id="grievance-form" onsubmit="event.preventDefault();">
+        
+        <div class="form-group">
+          <label for="full-name">Full Name</label>
+          <input type="text" id="full-name" class="form-control" value="Rohan Verma" required>
+        </div>
+
+        <div class="form-group">
+          <label for="aadhaar-number">Aadhaar Number</label>
+          <input type="text" id="aadhaar-number" class="form-control" placeholder="1234 5678 9012" value="2345 6789 0123" required>
+        </div>
+
+        <div class="form-group">
+          <label for="phone-number">Phone Number</label>
+          <input type="text" id="phone-number" class="form-control" placeholder="+91 98765 43210" value="+91 91234 56789" required>
+        </div>
+
+        <div class="form-group">
+          <label for="address">Address</label>
+          <textarea id="address" class="form-control" rows="3" required>45 MG Road, Sector 12</textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="pin-code">Pin Code</label>
+          <input type="text" id="pin-code" class="form-control" value="560034" required>
+        </div>
+
+        <div class="form-group">
+          <label for="grievance-category">Grievance Category</label>
+          <select id="grievance-category" class="form-control">
+            <option value="Water Supply" selected>Water Supply</option>
+            <option value="Electricity">Electricity</option>
+            <option value="Roads">Roads</option>
+            <option value="Sanitation">Sanitation</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="grievance-description">Grievance Description</label>
+          <textarea id="grievance-description" class="form-control" rows="4" required>No water supply in our area for the past 5 days.</textarea>
+        </div>
+
+        <button type="submit" id="submit-grievance-btn">Submit Grievance</button>
+      </form>
+    </div>
+
+    <!-- Video Verification Section -->
+    <div class="verification-card">
+      <h2>Video Verification</h2>
+      <div class="video-container">
+        <video id="webcam-feed" autoplay muted playsinline></video>
+        <img id="webcam-fallback" style="display: none;" alt="User Face Verification Placeholder" />
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // SVG fallback for webcam face verification
+    const faceSvgDataUrl = "data:image/svg+xml;utf8," + encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+        <rect width="200" height="200" fill="#1e293b"/>
+        <circle cx="100" cy="80" r="40" fill="#94a3b8"/>
+        <path d="M40 170 C40 125, 160 125, 160 170 Z" fill="#94a3b8"/>
+        <circle cx="85" cy="75" r="5" fill="#1e293b"/>
+        <circle cx="115" cy="75" r="5" fill="#1e293b"/>
+        <path d="M85 95 Q100 105 115 95" stroke="#1e293b" stroke-width="3" fill="none"/>
+      </svg>
+    `);
+
+    const videoEl = document.getElementById('webcam-feed');
+    const fallbackEl = document.getElementById('webcam-fallback');
+
+    fallbackEl.src = faceSvgDataUrl;
+
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then((stream) => {
+        videoEl.srcObject = stream;
+      })
+      .catch((err) => {
+        console.warn('Webcam permission denied or unavailable, showing fallback face icon:', err);
+        videoEl.style.display = 'none';
+        fallbackEl.style.display = 'block';
+      });
+  </script>
+</body>
+</html>
