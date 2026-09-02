@@ -108,8 +108,39 @@ document.getElementById('run-agent-btn').addEventListener('click', async () => {
     // Stage 5: Execute Action on Page
     const execStart = performance.now();
     addStatus(`⏳ [5/6] Executing action [${actionResponse.action}] on selector "${actionResponse.selector}"...`);
+    
+    // Inject action-executor script dynamically if not already active on tab
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabs[0].id },
+        files: ['extension/action-executor.js']
+      });
+    } catch (e) {
+      // Ignore if already loaded or on chrome://
+    }
+
     const execRes = await new Promise((resolve) => {
-      chrome.tabs.sendMessage(tabs[0].id, { type: 'EXECUTE_ACTION', action: actionResponse }, (res) => resolve(res));
+      chrome.tabs.sendMessage(tabs[0].id, { type: 'EXECUTE_ACTION', action: actionResponse }, (res) => {
+        if (chrome.runtime.lastError) {
+          // Attempt direct in-tab execution fallback via scripting API
+          chrome.scripting.executeScript({
+            target: { tabId: tabs[0].id },
+            func: (act) => {
+              const el = document.querySelector(act.selector);
+              if (!el) return { success: false, error: 'Selector not found: ' + act.selector };
+              el.style.outline = '3px solid #ef4444';
+              setTimeout(() => { el.style.outline = ''; }, 1000);
+              if (act.action === 'click') el.click();
+              return { success: true };
+            },
+            args: [actionResponse]
+          }).then((results) => {
+            resolve(results?.[0]?.result || { success: false, error: chrome.runtime.lastError.message });
+          }).catch((err) => resolve({ success: false, error: err.message }));
+        } else {
+          resolve(res);
+        }
+      });
     });
 
     if (!execRes || !execRes.success) {
