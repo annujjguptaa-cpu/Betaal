@@ -246,6 +246,11 @@
 
         <button type="submit" id="submit-grievance-btn">Submit Grievance</button>
       </form>
+      <div id="submission-success-banner" style="display: none; margin-top: 20px; padding: 16px; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; color: #166534; text-align: center;">
+        <h3 style="font-size: 1.1rem; margin-bottom: 4px;">🎉 Grievance Submitted Successfully!</h3>
+        <p style="font-size: 0.9rem;">Tracking ID: <b>GRV-2026-98412</b></p>
+        <p style="font-size: 0.8rem; color: #15803d; margin-top: 4px;">Your grievance has been registered with the Ministry of Public Grievances.</p>
+      </div>
     </div>
 
     <!-- Video Verification Section -->
@@ -285,6 +290,18 @@
         videoEl.style.display = 'none';
         fallbackEl.style.display = 'block';
       });
+
+    // Handle form submit click visual update
+    document.getElementById('submit-grievance-btn').addEventListener('click', () => {
+      const banner = document.getElementById('submission-success-banner');
+      const submitBtn = document.getElementById('submit-grievance-btn');
+      if (banner) {
+        banner.style.display = 'block';
+        submitBtn.textContent = '✓ Grievance Registered';
+        submitBtn.style.backgroundColor = '#166534';
+        submitBtn.disabled = true;
+      }
+    });
   </script>
 </body>
 </html>
