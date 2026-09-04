@@ -1,12 +1,14 @@
 /* extension/browser-polyfill.js */
 
 (function () {
+  const globalScope = typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : (typeof window !== 'undefined' ? window : this));
+
   const isFirefox = typeof browser !== 'undefined' && typeof browser.runtime !== 'undefined' && Boolean(browser.runtime.getURL);
   
   if (isFirefox) {
     // Firefox already provides native promise-based `browser` global
-    if (!window.browser) {
-      window.browser = browser;
+    if (!globalScope.browser) {
+      globalScope.browser = browser;
     }
     return;
   }
@@ -14,7 +16,7 @@
   // For Chrome or other WebExtension environments without native browser global, create browser shim
   const chromeApi = typeof chrome !== 'undefined' ? chrome : {};
 
-  window.browser = {
+  globalScope.browser = {
     tabs: {
       query: function (queryInfo) {
         return new Promise((resolve, reject) => {
