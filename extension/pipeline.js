@@ -47,22 +47,18 @@ async function processScreenshot(imageDataUrl, domStructure = []) {
   let piiRegions = [];
   let piiTiming = 0;
 
-  // 2. Conditionally execute PII detection
-  if (screenType === 'form-with-pii' || screenType === 'both') {
-    const piiStart = performance.now();
-    piiRegions = await extractPiiFn(imageDataUrl, domStructure);
-    piiTiming = Math.round(performance.now() - piiStart);
-  }
+  // 2. Execute PII detection
+  const piiStart = performance.now();
+  piiRegions = await extractPiiFn(imageDataUrl, domStructure);
+  piiTiming = Math.round(performance.now() - piiStart);
 
   let faceRegions = [];
   let faceTiming = 0;
 
-  // 2b. Conditionally execute Face detection
-  if (screenType === 'video-tile' || screenType === 'both') {
-    const faceStart = performance.now();
-    faceRegions = await detectFacesFn(imageDataUrl);
-    faceTiming = Math.round(performance.now() - faceStart);
-  }
+  // 2b. Execute Face detection
+  const faceStart = performance.now();
+  faceRegions = await detectFacesFn(imageDataUrl);
+  faceTiming = Math.round(performance.now() - faceStart);
 
   // 3. Merge regions with specific redaction methods
   const mergedRegions = [];
