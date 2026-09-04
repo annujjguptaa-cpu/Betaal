@@ -12,7 +12,7 @@
  *   counts: { faces: number, piiFields: number }
  * }>}
  */
-async function processScreenshot(imageDataUrl) {
+async function processScreenshot(imageDataUrl, domStructure = []) {
   const pipelineStart = performance.now();
 
   let extractPiiFn = typeof detectSensitivePII !== 'undefined' ? detectSensitivePII : null;
@@ -50,7 +50,7 @@ async function processScreenshot(imageDataUrl) {
   // 2. Conditionally execute PII detection
   if (screenType === 'form-with-pii' || screenType === 'both') {
     const piiStart = performance.now();
-    piiRegions = await extractPiiFn(imageDataUrl);
+    piiRegions = await extractPiiFn(imageDataUrl, domStructure);
     piiTiming = Math.round(performance.now() - piiStart);
   }
 

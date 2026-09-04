@@ -131,9 +131,14 @@ async function startAgentLoop(resumeAction = null) {
         throw new Error(errMsg);
       }
 
-      // Stage 2: Process Privacy Pipeline
+      // Stage 2: Extract DOM Structure
+      addStatus('⏳ Fetching page DOM structure...');
+      const domRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
+      const domStructure = (domRes && domRes.success) ? domRes.domStructure : [];
+
+      // Stage 3: Process Privacy Pipeline (Dual OCR + DOM Field Inspection)
       addStatus('⏳ Running local vision redaction pipeline...');
-      const pipelineRes = await processScreenshot(captureRes.dataUrl);
+      const pipelineRes = await processScreenshot(captureRes.dataUrl, domStructure);
       totalPiiCount = Math.max(totalPiiCount, pipelineRes.counts.piiFields);
       totalFaceCount = Math.max(totalFaceCount, pipelineRes.counts.faces);
       const payloadImage = isRedactionEnabled ? pipelineRes.redactedImage : pipelineRes.originalImage;
@@ -237,11 +242,6 @@ async function startAgentLoop(resumeAction = null) {
       }
 
       tableContainer.innerHTML = tableHeader + tableRows + `</tbody></table>`;
-
-      // Stage 3: Extract DOM
-      addStatus('⏳ Fetching page DOM structure...');
-      const domRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
-      const domStructure = (domRes && domRes.success) ? domRes.domStructure : [];
 
       // Stage 4: Call Backend VLM
       addStatus('⏳ Querying Backend VLM server...');
