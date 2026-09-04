@@ -58,30 +58,101 @@ Betaal includes native cross-browser support and a built-in `browser-polyfill.js
 
 ---
 
-## 🏗️ Core Architectural Workflow
+## 📊 How Betaal Functions (System Flowchart)
 
+```mermaid
+flowchart TD
+    A[User Opens Extension Popup] --> B[Enter Custom Goal in Input Box]
+    B --> C[Click 'Run Agent' Button]
+    
+    subgraph ClientSide ["🔒 Client-Side Browser (100% Private)"]
+        C --> D[Capture Visible Webpage Screenshot]
+        D --> E[ViT Vision Screen Classification]
+        E --> F[Tesseract.js OCR Text Extraction]
+        F --> G[PII Detection: Aadhaar / Phone / PAN / Email / 9+ Digits]
+        D --> H[BlazeFace ONNX Face Detection]
+        G --> I[HTML5 Canvas Redaction Engine]
+        H --> I
+        I --> J[Apply Solid Blackfill on PII & Block Pixelation on Faces]
+        
+        K[Content Script: Extract DOM Structure & Shadow DOM]
+    end
+    
+    J --> L[Send Redacted Image + DOM Structure + Goal]
+    K --> L
+    
+    subgraph BackendServer ["☁️ Express Backend VLM Engine"]
+        L --> M{API Key Available?}
+        M -- Yes --> N[Call Gemini 1.5 Flash / Claude VLM API]
+        M -- No --> O[Engage Intelligent Local VLM Fallback Engine]
+        N --> P[Generate JSON Response: action, selector, final, confidence]
+        O --> P
+    end
+    
+    P --> Q[Receive Action Payload in Browser]
+    
+    subgraph AgentLoop ["🔄 Client-Side Execution & Safety Loop"]
+        Q --> R{Needs Human Intervention?}
+        R -- Yes: Low confidence / Final action / File input / Repeated failures --> S[Pause Loop & Trigger OS Notification + Badge Count]
+        S --> T[User Approves or Stops in Notifications Tab]
+        T -- Approved --> U
+        
+        R -- No --> U[Validate Selector Presence on Page]
+        U -- Missing Selector --> V[Re-prompt Backend with Available DOM List (Max 2 Retries)]
+        V --> P
+        
+        U -- Valid Selector --> W[Execute Action: Click / Scroll / Type with Red Outline Highlight]
+        W --> X{Task Final or Safety Cap 15 Reached?}
+        X -- No --> D
+        X -- Yes --> Y[Log Outcome to Durable Vault Storage]
+    end
+    
+    Y --> Z[Task Completed Successfully 🎉]
 ```
-[ Active Webpage Screen ]
-         │
-         ▼ (Client-Side Only in Browser)
-┌─────────────────────────────────────────────────────────────┐
-│ 1. ViT Vision Screen Classification                        │
-│ 2. Tesseract.js OCR Text Region Extraction                   │
-│ 3. Regex & Fallback PII Classification (Aadhaar, Phone, PAN)│
-│ 4. BlazeFace WebGPU/WASM Face Region Detection              │
-│ 5. Canvas Redaction (Solid Blackfill PII + Block Pixelation)│
-└─────────────────────────────────────────────────────────────┘
-         │
-         ▼ (ONLY Sanitized / Redacted Data Sent Out)
-┌─────────────────────────────────────────────────────────────┐
-│ 6. Express Backend & VLM Reasoning (Gemini / Claude / Sim)  │
-└─────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 7. Executed Action & Agent Loop (Click / Scroll / Type)      │
-└─────────────────────────────────────────────────────────────┘
-```
+
+---
+
+## 🛠️ Step-by-Step Functioning of Betaal
+
+### 1. Goal Input & Initialization
+- When you click the **Betaal** extension icon, you enter your natural language request in the **Live View** tab (e.g. *"Fill this grievance form and submit"*).
+- Clicking **Run Agent** starts the autonomous execution loop.
+
+### 2. Local Vision Privacy Pipeline (Zero-Trust)
+Before any network payload leaves your machine:
+1. **Screen Capture**: Takes a snapshot of the visible active tab.
+2. **ViT Classification**: Classifies the layout type using Vision Transformer models.
+3. **OCR & PII Detection**: Extracts text regions via Tesseract.js and identifies sensitive pattern matches (Aadhaar, PAN, phone numbers, email addresses, and generic 9+ digit ID numbers).
+4. **Face Obfuscation**: BlazeFace ONNX detects facial biometric regions from webcam widgets.
+5. **Canvas Redaction**: Renders an in-memory HTML5 canvas overlay applying **solid black rectangles** over PII text and **irreversible block pixelation** over face bounding boxes.
+
+### 3. DOM Traversal & Sanitized VLM Reasoning
+- The content script extracts interactive field metadata (`input`, `button`, `textarea`, `select`), recursively traversing accessible **Shadow DOM roots** (`element.shadowRoot`).
+- The **sanitized redacted image** + **DOM metadata list** + **User Goal** are transmitted to the Express backend (`http://localhost:3000/api/agent/step`).
+- The VLM computes the single best next action and returns structured JSON:
+  ```json
+  {
+    "action": "type",
+    "selector": "#citizen-name",
+    "value": "Anuj Gupta",
+    "reasoning": "Filling citizen name field to proceed with grievance submission",
+    "final": false,
+    "confidence": 0.95
+  }
+  ```
+
+### 4. Robust Action Execution & Self-Correction
+- **Selector Validation**: Before clicking or typing, `action-executor.js` verifies that `document.querySelector(action.selector)` exists. If a selector is missing, Betaal automatically re-prompts the backend with the current DOM list up to 2 times without breaking.
+- **Visual Feedback**: Applies a temporary 3px red outline to target elements for clear user transparency during execution.
+
+### 5. Human-in-the-Loop Interventions & Notifications
+- If an action triggers safety rules (final submission step, low confidence < 60%, file upload input, or repeated selector failures), Betaal **pauses the loop**.
+- Displays an OS desktop notification and increments an extension icon badge.
+- The user can open the **Notifications** tab to **"Approve & Continue"** or **"Stop Here"**.
+
+### 6. Durable Vault Audit Storage
+- At the end of every agent run, metadata (timestamps, site URLs, PII/face counts, action summaries) is saved to browser storage (`chrome.storage.local`).
+- You can review past activity under the **Vault** tab anytime. Raw PII values and unredacted screenshots are **never** stored.
 
 ---
 
