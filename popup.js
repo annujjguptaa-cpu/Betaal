@@ -138,6 +138,106 @@ async function startAgentLoop(resumeAction = null) {
       totalFaceCount = Math.max(totalFaceCount, pipelineRes.counts.faces);
       const payloadImage = isRedactionEnabled ? pipelineRes.redactedImage : pipelineRes.originalImage;
 
+      // Render Live Timing Breakdown Telemetry
+      const tEl = document.getElementById('live-timer');
+      if (tEl) {
+        tEl.innerHTML = `⏱️ <b>Timing Breakdown:</b><br>` +
+          `Classify: ${pipelineRes.timing.classification}ms | ` +
+          `PII Detection: ${pipelineRes.timing.piiDetection}ms | Face Detection: ${pipelineRes.timing.faceDetection}ms | ` +
+          `Redaction: ${pipelineRes.timing.redaction}ms`;
+      }
+
+      // Render Side-by-Side Thumbnails (Original vs Redacted View)
+      let thumbRow = debugPanel.querySelector('.thumbnails-row');
+      if (!thumbRow) {
+        thumbRow = document.createElement('div');
+        thumbRow.className = 'thumbnails-row';
+        debugPanel.insertBefore(thumbRow, debugPanel.firstChild);
+      }
+      thumbRow.innerHTML = `
+        <div class="thumb-card">
+          <span>Original Screen (Click to Zoom)</span>
+          <img id="thumb-orig" src="${pipelineRes.originalImage}" alt="Original Screenshot" />
+        </div>
+        <div class="thumb-card">
+          <span>Redacted Screen (Click to Zoom)</span>
+          <img id="thumb-redacted" src="${pipelineRes.redactedImage}" alt="Redacted Screenshot" />
+        </div>
+      `;
+
+      // Wire Click-to-Zoom Modal
+      const modal = document.getElementById('image-modal');
+      const modalImg = document.getElementById('modal-img');
+      const closeModalBtn = document.getElementById('close-modal-btn');
+      const openZoom = (src) => {
+        if (modalImg && modal) {
+          modalImg.src = src;
+          modal.style.display = 'flex';
+        }
+      };
+      const thumbOrigEl = document.getElementById('thumb-orig');
+      const thumbRedEl = document.getElementById('thumb-redacted');
+      if (thumbOrigEl) thumbOrigEl.addEventListener('click', () => openZoom(pipelineRes.originalImage));
+      if (thumbRedEl) thumbRedEl.addEventListener('click', () => openZoom(pipelineRes.redactedImage));
+      if (closeModalBtn) closeModalBtn.addEventListener('click', () => { modal.style.display = 'none'; });
+      if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+
+      // Render Redacted PII Audit Table
+      let tableContainer = debugPanel.querySelector('.detection-table-container');
+      if (!tableContainer) {
+        tableContainer = document.createElement('div');
+        tableContainer.className = 'detection-table-container';
+        debugPanel.appendChild(tableContainer);
+      }
+
+      const tableHeader = `
+        <table class="detection-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Detected Text (Safe)</th>
+              <th>Redaction Method</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      let tableRows = '';
+      const formatSafeType = (type) => {
+        switch (type) {
+          case 'aadhaar': return 'Aadhaar Number';
+          case 'phone': return 'Phone Number';
+          case 'address': return 'Address Text';
+          case 'pan': return 'PAN Card Number';
+          case 'email': return 'Email Address';
+          case 'possible-id-number': return 'Possible ID Number';
+          case 'face': return 'User Face Region';
+          default: return 'Sensitive Region';
+        }
+      };
+
+      pipelineRes.detectedRegions.forEach((region) => {
+        const safeLabel = formatSafeType(region.type);
+        const safeText = region.type === 'face' ? '[Face Detection Box]' : `${safeLabel} [HIDDEN]`;
+        const methodLabel = region.method === 'blur' ? 'Irreversible Pixelation' : 'Solid Blackfill';
+
+        tableRows += `
+          <tr>
+            <td><b>${safeLabel}</b></td>
+            <td>${safeText}</td>
+            <td>${methodLabel}</td>
+            <td><span class="status-tag">REDACTED</span></td>
+          </tr>
+        `;
+      });
+
+      if (pipelineRes.detectedRegions.length === 0) {
+        tableRows = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">No sensitive PII or faces detected.</td></tr>`;
+      }
+
+      tableContainer.innerHTML = tableHeader + tableRows + `</tbody></table>`;
+
       // Stage 3: Extract DOM
       addStatus('⏳ Fetching page DOM structure...');
       const domRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
