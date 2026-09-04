@@ -13,8 +13,12 @@ async function executeAction(action) {
 
   const el = document.querySelector(action.selector);
   if (!el) {
-    console.error(`[ActionExecutor] Selector not found: "${action.selector}"`);
-    return { success: false, error: 'Selector not found: ' + action.selector };
+    console.warn(`[ActionExecutor] Selector not found on page: "${action.selector}"`);
+    return {
+      success: false,
+      selectorNotFound: true,
+      error: `The selector [${action.selector}] does not exist on this page.`
+    };
   }
 
   // Visual highlight indicator (temporary 3px red outline)

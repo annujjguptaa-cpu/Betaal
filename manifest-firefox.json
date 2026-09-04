@@ -3,6 +3,12 @@
   "name": "Betaal",
   "version": "0.1.0",
   "description": "Privacy-preserving vision agent",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "betaal@yourteam.dev",
+      "strict_min_version": "109.0"
+    }
+  },
   "permissions": [
     "activeTab",
     "scripting",
@@ -13,8 +19,14 @@
   "host_permissions": [
     "<all_urls>"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "background": {
-    "service_worker": "background.js"
+    "scripts": [
+      "extension/browser-polyfill.js",
+      "background.js"
+    ]
   },
   "action": {
     "default_popup": "popup.html",

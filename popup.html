@@ -243,6 +243,39 @@
       padding: 8px;
       border-radius: 4px;
       border: 1px solid #991b1b;
+    /* Tab Bar Navigation */
+    .tab-bar {
+      display: flex;
+      border-bottom: 1px solid #334155;
+      margin-bottom: 12px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 8px 0;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #94a3b8;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 0;
+      text-align: center;
+    }
+    .tab-btn:hover {
+      color: #f8fafc;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .tab-btn.active {
+      color: #38bdf8;
+      border-bottom-color: #38bdf8;
+      background: transparent;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
     }
   </style>
 </head>
@@ -253,23 +286,56 @@
   </div>
   <p class="subtitle">Sees Everything. Reveals Only What Matters.</p>
 
-  <div class="toggle-card">
-    <div class="toggle-row">
-      <span id="toggle-status-text" class="toggle-label on">Redaction: ON</span>
-      <label class="switch">
-        <input type="checkbox" id="redaction-toggle" checked>
-        <span class="slider"></span>
-      </label>
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="live-view-tab">Live View</button>
+    <button class="tab-btn" data-tab="vault-tab">Vault</button>
+    <button class="tab-btn" data-tab="notifications-tab">Notifications</button>
+  </div>
+
+  <!-- Tab 1: Live View -->
+  <div id="live-view-tab" class="tab-content active">
+    <div class="toggle-card">
+      <div class="toggle-row">
+        <span id="toggle-status-text" class="toggle-label on">Redaction: ON</span>
+        <label class="switch">
+          <input type="checkbox" id="redaction-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div id="toggle-warning-msg" class="toggle-warning">
+        ⚠️ Demo mode: sending unredacted data for comparison purposes only.
+      </div>
     </div>
-    <div id="toggle-warning-msg" class="toggle-warning">
-      ⚠️ Demo mode: sending unredacted data for comparison purposes only.
+
+    <div style="margin-bottom: 12px;">
+      <input id="goal-input" type="text" placeholder="What should I help you do on this page?" style="width: 100%; padding: 8px 10px; box-sizing: border-box; background-color: #1e293b; color: #f8fafc; border: 1px solid #334155; border-radius: 6px; font-size: 0.85rem; outline: none;">
+      <div id="goal-error" style="color: #ef4444; font-size: 0.75rem; margin-top: 4px; display: none;">Please enter a goal before running the agent.</div>
+    </div>
+
+    <button id="run-agent-btn">Run Agent</button>
+
+    <div id="status-list"></div>
+    <div id="debug-panel"></div>
+  </div>
+
+  <!-- Tab 2: Vault -->
+  <div id="vault-tab" class="tab-content">
+    <div id="vault-list" style="font-size: 0.8rem; color: #cbd5e1;">
+      <p style="color: #94a3b8; text-align: center;">No activity recorded in Vault yet.</p>
     </div>
   </div>
 
-  <button id="run-agent-btn">Run Agent</button>
-
-  <div id="status-list"></div>
-  <div id="debug-panel"></div>
+  <!-- Tab 3: Notifications -->
+  <div id="notifications-tab" class="tab-content">
+    <div id="pending-notifications-list" style="margin-bottom: 16px;">
+      <p style="color: #94a3b8; font-size: 0.8rem; text-align: center;">No pending interventions.</p>
+    </div>
+    <div id="resolved-notifications-section" style="border-top: 1px solid #334155; padding-top: 8px;">
+      <span style="font-size: 0.75rem; font-weight: bold; color: #94a3b8;">Recent Decisions</span>
+      <div id="resolved-notifications-list" style="margin-top: 6px; font-size: 0.78rem; color: #94a3b8;"></div>
+    </div>
+  </div>
 
   <!-- Image Zoom Modal -->
   <div id="image-modal" class="image-modal">
@@ -277,6 +343,7 @@
     <button class="image-modal-close" id="close-modal-btn">Close Zoom</button>
   </div>
 
+  <script src="extension/browser-polyfill.js"></script>
   <script src="node_modules/tesseract.js/dist/tesseract.min.js"></script>
   <script src="node_modules/onnxruntime-web/dist/ort.min.js"></script>
   <script src="extension/detection/ocr.js"></script>
@@ -287,6 +354,8 @@
   <script src="extension/redaction/redact.js"></script>
   <script src="extension/pipeline.js"></script>
   <script src="extension/network.js"></script>
+  <script src="extension/intervention-rules.js"></script>
+  <script src="extension/vault.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

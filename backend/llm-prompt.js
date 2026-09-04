@@ -21,7 +21,9 @@ Respond ONLY with valid JSON matching exactly this schema:
 {
   "action": "click" | "scroll" | "type",
   "selector": "CSS selector string",
-  "reasoning": "brief explanation"
+  "reasoning": "brief explanation",
+  "final": boolean (true if this completes the task or submits a final form, false otherwise),
+  "confidence": number between 0.0 and 1.0 (indicating confidence in this action choice)
 }
 Do not include markdown code fences or any text outside the JSON object.`;
 }

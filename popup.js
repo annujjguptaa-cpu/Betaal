@@ -2,6 +2,32 @@
 
 let timerInterval = null;
 let startTime = 0;
+let pendingInterventions = [];
+let pausedLoopState = null; // Stores state when agent loop pauses for human intervention
+
+// Tab Switching Handler
+document.addEventListener('DOMContentLoaded', () => {
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetTabId = btn.getAttribute('data-tab');
+      tabBtns.forEach((b) => b.classList.remove('active'));
+      tabContents.forEach((c) => c.classList.remove('active'));
+
+      btn.classList.add('active');
+      const targetContent = document.getElementById(targetTabId);
+      if (targetContent) targetContent.classList.add('active');
+
+      if (targetTabId === 'vault-tab') renderVaultTab();
+      if (targetTabId === 'notifications-tab') renderNotificationsTab();
+    });
+  });
+
+  renderVaultTab();
+  renderNotificationsTab();
+});
 
 function updateBadgeState(state, text) {
   const badge = document.getElementById('state-badge');
@@ -15,44 +41,47 @@ const redactionToggle = document.getElementById('redaction-toggle');
 const toggleStatusText = document.getElementById('toggle-status-text');
 const toggleWarningMsg = document.getElementById('toggle-warning-msg');
 
-redactionToggle.addEventListener('change', () => {
-  if (redactionToggle.checked) {
-    toggleStatusText.textContent = 'Redaction: ON';
-    toggleStatusText.className = 'toggle-label on';
-    toggleWarningMsg.style.display = 'none';
-  } else {
-    toggleStatusText.textContent = 'Redaction: OFF';
-    toggleStatusText.className = 'toggle-label off';
-    toggleWarningMsg.style.display = 'block';
-  }
+if (redactionToggle) {
+  redactionToggle.addEventListener('change', () => {
+    if (redactionToggle.checked) {
+      toggleStatusText.textContent = 'Redaction: ON';
+      toggleStatusText.className = 'toggle-label on';
+      toggleWarningMsg.style.display = 'none';
+    } else {
+      toggleStatusText.textContent = 'Redaction: OFF';
+      toggleStatusText.className = 'toggle-label off';
+      toggleWarningMsg.style.display = 'block';
+    }
+  });
+}
+
+// Main Agent Loop Execution
+document.getElementById('run-agent-btn').addEventListener('click', async () => {
+  startAgentLoop();
 });
 
-document.getElementById('run-agent-btn').addEventListener('click', async () => {
+async function startAgentLoop(resumeAction = null) {
   const runBtn = document.getElementById('run-agent-btn');
   const debugPanel = document.getElementById('debug-panel');
   const statusList = document.getElementById('status-list');
 
+  const goalInput = document.getElementById('goal-input');
+  const goalError = document.getElementById('goal-error');
+  const goal = goalInput ? goalInput.value.trim() : '';
+
+  if (!goal) {
+    if (goalError) goalError.style.display = 'block';
+    return;
+  } else {
+    if (goalError) goalError.style.display = 'none';
+  }
+
   const isRedactionEnabled = redactionToggle.checked;
 
   runBtn.disabled = true;
-  updateBadgeState('running', 'Running...');
+  updateBadgeState('running', 'Running Loop...');
   debugPanel.innerHTML = '';
   statusList.innerHTML = '';
-
-  // Timer Setup
-  startTime = performance.now();
-  const timerDiv = document.createElement('div');
-  timerDiv.className = 'timer-badge';
-  timerDiv.id = 'live-timer';
-  timerDiv.textContent = '⏱️ Running: 0 ms';
-  debugPanel.appendChild(timerDiv);
-
-  clearInterval(timerInterval);
-  timerInterval = setInterval(() => {
-    const elapsed = Math.round(performance.now() - startTime);
-    const tEl = document.getElementById('live-timer');
-    if (tEl) tEl.textContent = `⏱️ Running: ${elapsed} ms`;
-  }, 100);
 
   const addStatus = (msg) => {
     const p = document.createElement('div');
@@ -60,207 +89,272 @@ document.getElementById('run-agent-btn').addEventListener('click', async () => {
     statusList.appendChild(p);
   };
 
-  const captureStart = performance.now();
+  const MAX_ITERATIONS = 15;
+  let iterationCount = 0;
+  let consecutiveFailures = 0;
+  let lastSelector = null;
+  const actionsTaken = [];
+  let finalOutcome = 'completed';
+  let totalPiiCount = 0;
+  let totalFaceCount = 0;
+  let currentTabUrl = 'Unknown Site';
+
+  startTime = performance.now();
 
   try {
-    // Stage 1: Capture Screen
-    addStatus('⏳ [1/6] Capturing visible tab screenshot...');
-    const captureRes = await new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: 'CAPTURE_SCREEN' }, (res) => resolve(res));
-    });
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tabs && tabs[0]) currentTabUrl = tabs[0].url || 'Unknown Site';
 
-    if (!captureRes || !captureRes.success) {
-      throw new Error(captureRes ? captureRes.error : 'Failed to capture tab screenshot.');
-    }
-    const captureTime = Math.round(performance.now() - captureStart);
-    addStatus(`✅ [1/6] Screen screenshot captured (${captureTime} ms)`);
-
-    // Stage 2: Process Screenshot via Pipeline
-    addStatus('⏳ [2/6] Running local vision detection & redaction pipeline...');
-    const pipelineRes = await processScreenshot(captureRes.dataUrl);
-
-    // Determine payload image based on redaction toggle state
-    const payloadImage = isRedactionEnabled ? pipelineRes.redactedImage : pipelineRes.originalImage;
-    addStatus(`✅ [2/6] Privacy pipeline complete (PII fields: ${pipelineRes.counts.piiFields}, Faces: ${pipelineRes.counts.faces})`);
-
-    // Stage 3: Fetch DOM Structure
-    const domStart = performance.now();
-    addStatus('⏳ [3/6] Fetching page DOM structure...');
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs || tabs.length === 0) throw new Error('No active tab found.');
-
-    const domRes = await new Promise((resolve) => {
-      chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' }, (res) => resolve(res));
-    });
-
-    const domStructure = (domRes && domRes.success) ? domRes.domStructure : [];
-    const domTime = Math.round(performance.now() - domStart);
-    addStatus(`✅ [3/6] DOM structure retrieved (${domStructure.length} elements, ${domTime} ms)`);
-
-    // Stage 4: Send to Backend VLM Server
-    const netStart = performance.now();
-    addStatus('⏳ [4/6] Sending payload to Backend VLM server...');
-    const goal = 'Help me submit this grievance form';
-    const actionResponse = await sendToBackend(payloadImage, goal, domStructure);
-    const netTime = Math.round(performance.now() - netStart);
-    addStatus(`✅ [4/6] VLM reasoning complete: Action=${actionResponse.action}, Selector=${actionResponse.selector} (${netTime} ms)`);
-
-    // Stage 5: Execute Action on Page
-    const execStart = performance.now();
-    addStatus(`⏳ [5/6] Executing action [${actionResponse.action}] on selector "${actionResponse.selector}"...`);
-    
-    // Inject action-executor script dynamically if not already active on tab
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tabs[0].id },
-        files: ['extension/action-executor.js']
-      });
-    } catch (e) {
-      // Ignore if already loaded or on chrome://
-    }
-
-    const execRes = await new Promise((resolve) => {
-      chrome.tabs.sendMessage(tabs[0].id, { type: 'EXECUTE_ACTION', action: actionResponse }, (res) => {
-        if (chrome.runtime.lastError) {
-          // Attempt direct in-tab execution fallback via scripting API
-          chrome.scripting.executeScript({
-            target: { tabId: tabs[0].id },
-            func: (act) => {
-              const el = document.querySelector(act.selector);
-              if (!el) return { success: false, error: 'Selector not found: ' + act.selector };
-              el.style.outline = '3px solid #ef4444';
-              setTimeout(() => { el.style.outline = ''; }, 1000);
-              if (act.action === 'click') el.click();
-              return { success: true };
-            },
-            args: [actionResponse]
-          }).then((results) => {
-            resolve(results?.[0]?.result || { success: false, error: chrome.runtime.lastError.message });
-          }).catch((err) => resolve({ success: false, error: err.message }));
-        } else {
-          resolve(res);
-        }
-      });
-    });
-
-    if (!execRes || !execRes.success) {
-      const detail = execRes ? execRes.error : 'Action execution failed on target page.';
-      throw new Error(detail);
-    }
-    const execTime = Math.round(performance.now() - execStart);
-    addStatus(`✅ [5/6] Action executed on active page (${execTime} ms)`);
-
-    // Stop Live Timer
-    clearInterval(timerInterval);
-    const totalRunTime = Math.round(performance.now() - startTime);
-
-    // Freeze & Render Breakdown Timer
-    const tEl = document.getElementById('live-timer');
-    if (tEl) {
-      tEl.innerHTML = `⏱️ <b>Timing Breakdown:</b><br>` +
-        `Capture: ${captureTime}ms | Classify: ${pipelineRes.timing.classification}ms | ` +
-        `PII Detection: ${pipelineRes.timing.piiDetection}ms | Face Detection: ${pipelineRes.timing.faceDetection}ms | ` +
-        `Redaction: ${pipelineRes.timing.redaction}ms | Network+VLM: ${netTime}ms | Action: ${execTime}ms | ` +
-        `<b>Total: ${totalRunTime}ms</b>`;
-    }
-
-    // Render Side-by-Side Thumbnails (Original vs Redacted)
-    const thumbRow = document.createElement('div');
-    thumbRow.className = 'thumbnails-row';
-    thumbRow.innerHTML = `
-      <div class="thumb-card">
-        <span>Original Screen (Click to Zoom)</span>
-        <img id="thumb-orig" src="${pipelineRes.originalImage}" alt="Original Screenshot" />
-      </div>
-      <div class="thumb-card">
-        <span>Redacted Screen (Click to Zoom)</span>
-        <img id="thumb-redacted" src="${pipelineRes.redactedImage}" alt="Redacted Screenshot" />
-      </div>
-    `;
-    debugPanel.appendChild(thumbRow);
-
-    // Wire Click-to-Zoom Modal
-    const modal = document.getElementById('image-modal');
-    const modalImg = document.getElementById('modal-img');
-    const closeModalBtn = document.getElementById('close-modal-btn');
-
-    const openZoom = (src) => {
-      modalImg.src = src;
-      modal.style.display = 'flex';
-    };
-
-    document.getElementById('thumb-orig').addEventListener('click', () => openZoom(pipelineRes.originalImage));
-    document.getElementById('thumb-redacted').addEventListener('click', () => openZoom(pipelineRes.redactedImage));
-
-    closeModalBtn.addEventListener('click', () => { modal.style.display = 'none'; });
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-
-    // Render Detection Audit Table (WITHOUT leaking raw PII text)
-    const tableHeader = `
-      <table class="detection-table">
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>Detected Text (Safe)</th>
-            <th>Redaction Method</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-    `;
-
-    let tableRows = '';
-    const formatSafeType = (type) => {
-      switch (type) {
-        case 'aadhaar': return 'Aadhaar Number';
-        case 'phone': return 'Phone Number';
-        case 'address': return 'Address Text';
-        case 'pan': return 'PAN Card Number';
-        case 'email': return 'Email Address';
-        case 'face': return 'User Face Region';
-        default: return 'Sensitive Region';
+    // If resuming approved intervention action
+    if (resumeAction) {
+      addStatus(`▶️ Resuming approved action: [${resumeAction.action}] on "${resumeAction.selector}"`);
+      const execRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'EXECUTE_ACTION', action: resumeAction });
+      if (!execRes || !execRes.success) {
+        throw new Error(execRes ? execRes.error : 'Execution failed upon resumption.');
       }
-    };
-
-    pipelineRes.detectedRegions.forEach((region) => {
-      const safeLabel = formatSafeType(region.type);
-      const safeText = region.type === 'face' ? '[Face Detection Box]' : `${safeLabel} [HIDDEN]`;
-      const methodLabel = region.method === 'blur' ? 'Irreversible Pixelation' : 'Solid Blackfill';
-
-      tableRows += `
-        <tr>
-          <td><b>${safeLabel}</b></td>
-          <td>${safeText}</td>
-          <td>${methodLabel}</td>
-          <td><span class="status-tag">REDACTED</span></td>
-        </tr>
-      `;
-    });
-
-    if (pipelineRes.detectedRegions.length === 0) {
-      tableRows = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">No sensitive PII or faces detected.</td></tr>`;
+      actionsTaken.push(`[Approved & Executed] ${resumeAction.action} on ${resumeAction.selector}`);
     }
 
-    const tableFooter = `</tbody></table>`;
-    const tableContainer = document.createElement('div');
-    tableContainer.innerHTML = tableHeader + tableRows + tableFooter;
-    debugPanel.appendChild(tableContainer);
+    while (iterationCount < MAX_ITERATIONS) {
+      iterationCount++;
+      addStatus(`\n🔄 --- Agent Loop Iteration ${iterationCount}/${MAX_ITERATIONS} ---`);
 
-    // Stage 6: Completion
-    addStatus('🎉 [6/6] Pipeline & Action Execution Complete!');
-    updateBadgeState('ready', 'Ready');
+      // Stage 1: Capture Screen
+      addStatus('⏳ Capturing tab screenshot...');
+      const captureRes = await browser.runtime.sendMessage({ type: 'CAPTURE_SCREEN' });
+
+      if (!captureRes || !captureRes.success) {
+        const errMsg = captureRes ? captureRes.error : 'Failed to capture tab screenshot.';
+        if (errMsg.includes('security reasons') || errMsg.includes('cannot be captured')) {
+          throw new Error('🔒 Restricted Page: This page type (e.g., settings, internal extension, or webstore) cannot be captured for security reasons.');
+        }
+        throw new Error(errMsg);
+      }
+
+      // Stage 2: Process Privacy Pipeline
+      addStatus('⏳ Running local vision redaction pipeline...');
+      const pipelineRes = await processScreenshot(captureRes.dataUrl);
+      totalPiiCount = Math.max(totalPiiCount, pipelineRes.counts.piiFields);
+      totalFaceCount = Math.max(totalFaceCount, pipelineRes.counts.faces);
+      const payloadImage = isRedactionEnabled ? pipelineRes.redactedImage : pipelineRes.originalImage;
+
+      // Stage 3: Extract DOM
+      addStatus('⏳ Fetching page DOM structure...');
+      const domRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
+      const domStructure = (domRes && domRes.success) ? domRes.domStructure : [];
+
+      // Stage 4: Call Backend VLM
+      addStatus('⏳ Querying Backend VLM server...');
+      let actionResponse = await sendToBackend(payloadImage, goal, domStructure);
+
+      // Check Human Intervention Rules
+      const interventionCheck = needsHumanIntervention(actionResponse, {
+        consecutiveFailures,
+        actionHistory: actionsTaken,
+        domStructure
+      });
+
+      if (interventionCheck.needed) {
+        addStatus(`⚠️ Intervention Triggered: ${interventionCheck.reason}`);
+        updateBadgeState('error', 'Paused for Approval');
+
+        // Notify Background & Add Pending Notification
+        await browser.runtime.sendMessage({
+          type: 'SHOW_INTERVENTION_NOTIFICATION',
+          reason: interventionCheck.reason
+        });
+
+        pendingInterventions.unshift({
+          id: 'notif_' + Date.now(),
+          reason: interventionCheck.reason,
+          siteUrl: currentTabUrl,
+          action: actionResponse,
+          status: 'pending'
+        });
+
+        pausedLoopState = { action: actionResponse, goal };
+        renderNotificationsTab();
+        finalOutcome = 'paused';
+
+        // Log to Vault as paused
+        await saveToVault({
+          timestamp: new Date().toISOString(),
+          siteUrl: currentTabUrl,
+          piiCount: totalPiiCount,
+          faceCount: totalFaceCount,
+          actionsTaken,
+          outcome: 'paused'
+        });
+        renderVaultTab();
+
+        return; // Pause execution loop for user intervention
+      }
+
+      // Stage 5: Execute Action with Selector Fallback & Retry (Up to 2 Retries)
+      let retryAttempts = 0;
+      let actionExecuted = false;
+
+      while (retryAttempts <= 2 && !actionExecuted) {
+        addStatus(`⏳ Executing action [${actionResponse.action}] on selector "${actionResponse.selector}"...`);
+        const execRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'EXECUTE_ACTION', action: actionResponse });
+
+        if (execRes && execRes.success) {
+          actionExecuted = true;
+          consecutiveFailures = 0;
+          lastSelector = actionResponse.selector;
+          actionsTaken.push(`${actionResponse.action} on ${actionResponse.selector}`);
+          addStatus(`✅ Action successfully executed.`);
+        } else if (execRes && execRes.selectorNotFound && retryAttempts < 2) {
+          retryAttempts++;
+          consecutiveFailures++;
+          addStatus(`⚠️ Selector "${actionResponse.selector}" not found. Re-prompting VLM backend (Retry ${retryAttempts}/2)...`);
+          
+          const correctionGoal = `${goal}\n\nThe selector [${actionResponse.selector}] does not exist on this page. Here is the exact list of available elements:\n${JSON.stringify(domStructure)}\nChoose a selector ONLY from this list.`;
+          actionResponse = await sendToBackend(payloadImage, correctionGoal, domStructure);
+        } else {
+          // Exceeded retries or unhandled execution failure
+          throw new Error("I couldn't find the right element on this page, please complete this step manually.");
+        }
+      }
+
+      // Check if action was marked final by VLM
+      if (actionResponse.final) {
+        addStatus('🎉 Task marked as complete by VLM!');
+        break;
+      }
+    }
+
+    if (iterationCount >= MAX_ITERATIONS) {
+      addStatus(`⚠️ Safety Cap Reached: Maximum of ${MAX_ITERATIONS} iterations reached.`);
+      finalOutcome = 'stopped';
+    }
+
+    updateBadgeState('ready', 'Completed');
+    addStatus('🎉 Agent loop finished successfully.');
+
+    // Save final entry to Vault
+    await saveToVault({
+      timestamp: new Date().toISOString(),
+      siteUrl: currentTabUrl,
+      piiCount: totalPiiCount,
+      faceCount: totalFaceCount,
+      actionsTaken,
+      outcome: finalOutcome
+    });
+    renderVaultTab();
 
   } catch (err) {
-    clearInterval(timerInterval);
-    console.error('[Run Agent Pipeline Error]:', err);
+    console.error('[Agent Loop Error]:', err);
     updateBadgeState('error', 'Error');
-
     const errDiv = document.createElement('div');
     errDiv.id = 'error-message';
-    errDiv.textContent = `❌ Execution Error: ${err.message}`;
+    errDiv.textContent = `❌ Execution Stopped: ${err.message}`;
     debugPanel.appendChild(errDiv);
-
   } finally {
     runBtn.disabled = false;
   }
-});
+}
+
+// Vault Tab Rendering
+async function renderVaultTab() {
+  const vaultListContainer = document.getElementById('vault-list');
+  if (!vaultListContainer) return;
+
+  const entries = await getVaultEntries();
+
+  if (!entries || entries.length === 0) {
+    vaultListContainer.innerHTML = `<p style="color: #94a3b8; text-align: center; margin-top: 16px;">No activity recorded in Vault yet.</p>`;
+    return;
+  }
+
+  vaultListContainer.innerHTML = entries.map((entry) => {
+    const timeStr = new Date(entry.timestamp).toLocaleString();
+    const actionsSummary = entry.actionsTaken.length > 0 ? entry.actionsTaken.join(' ➔ ') : 'No actions';
+    const badgeColor = entry.outcome === 'completed' ? '#4ade80' : (entry.outcome === 'paused' ? '#38bdf8' : '#f87171');
+
+    return `
+      <div style="background-color: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px; margin-bottom: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <span style="font-weight: bold; color: #f8fafc; font-size: 0.82rem;">${entry.siteUrl}</span>
+          <span style="font-size: 0.7rem; color: ${badgeColor}; font-weight: bold; text-transform: uppercase;">${entry.outcome}</span>
+        </div>
+        <div style="font-size: 0.72rem; color: #94a3b8; margin-bottom: 6px;">${timeStr} | PII Redacted: ${entry.piiCount} | Faces: ${entry.faceCount}</div>
+        <div style="font-size: 0.75rem; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Actions: ${actionsSummary}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Notifications Tab Rendering
+function renderNotificationsTab() {
+  const pendingContainer = document.getElementById('pending-notifications-list');
+  const resolvedContainer = document.getElementById('resolved-notifications-list');
+  if (!pendingContainer || !resolvedContainer) return;
+
+  const pendingItems = pendingInterventions.filter((item) => item.status === 'pending');
+  const resolvedItems = pendingInterventions.filter((item) => item.status !== 'pending');
+
+  // Update badge count in background
+  browser.runtime.sendMessage({ type: 'UPDATE_BADGE_COUNT', count: pendingItems.length }).catch(() => {});
+
+  if (pendingItems.length === 0) {
+    pendingContainer.innerHTML = `<p style="color: #94a3b8; font-size: 0.8rem; text-align: center; margin-top: 12px;">No pending interventions.</p>`;
+  } else {
+    pendingContainer.innerHTML = pendingItems.map((item) => `
+      <div style="background-color: #1e293b; border: 1px solid #ef4444; border-radius: 6px; padding: 10px; margin-bottom: 10px;">
+        <div style="font-size: 0.8rem; font-weight: bold; color: #fca5a5; margin-bottom: 4px;">⚠️ Input Required</div>
+        <div style="font-size: 0.75rem; color: #f8fafc; margin-bottom: 6px;">${item.reason}</div>
+        <div style="font-size: 0.7rem; color: #94a3b8; margin-bottom: 8px;">Target Page: ${item.siteUrl}</div>
+        <div style="display: flex; gap: 8px;">
+          <button style="flex: 1; padding: 6px; background-color: #22c55e; color: white; border: none; border-radius: 4px; font-size: 0.75rem; cursor: pointer;" onclick="approveIntervention('${item.id}')">Approve & Continue</button>
+          <button style="flex: 1; padding: 6px; background-color: #ef4444; color: white; border: none; border-radius: 4px; font-size: 0.75rem; cursor: pointer;" onclick="stopIntervention('${item.id}')">Stop Here</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  if (resolvedItems.length === 0) {
+    resolvedContainer.innerHTML = `<p style="color: #64748b; font-size: 0.75rem;">No recent decisions.</p>`;
+  } else {
+    resolvedContainer.innerHTML = resolvedItems.map((item) => `
+      <div style="padding: 6px 0; border-bottom: 1px solid #334155;">
+        <div style="font-size: 0.75rem; color: #cbd5e1;">Decision: <b style="color: ${item.status === 'approved' ? '#4ade80' : '#f87171'}">${item.status.toUpperCase()}</b></div>
+        <div style="font-size: 0.7rem; color: #94a3b8;">${item.reason}</div>
+      </div>
+    `).join('');
+  }
+}
+
+// Global Intervention Decision Functions
+window.approveIntervention = async function (id) {
+  const item = pendingInterventions.find((i) => i.id === id);
+  if (item) {
+    item.status = 'approved';
+    renderNotificationsTab();
+    if (pausedLoopState) {
+      startAgentLoop(item.action);
+    }
+  }
+};
+
+window.stopIntervention = async function (id) {
+  const item = pendingInterventions.find((i) => i.id === id);
+  if (item) {
+    item.status = 'stopped';
+    renderNotificationsTab();
+
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    const currentTabUrl = tabs && tabs[0] ? tabs[0].url : 'Unknown Site';
+
+    await saveToVault({
+      timestamp: new Date().toISOString(),
+      siteUrl: currentTabUrl,
+      piiCount: 0,
+      faceCount: 0,
+      actionsTaken: ['Stopped by user intervention'],
+      outcome: 'stopped'
+    });
+    renderVaultTab();
+    updateBadgeState('ready', 'Stopped');
+  }
+};

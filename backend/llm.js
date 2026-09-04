@@ -44,7 +44,9 @@ function parseVLMResponse(rawText) {
   return {
     action: parsed.action,
     selector: parsed.selector,
-    reasoning: parsed.reasoning
+    reasoning: parsed.reasoning,
+    final: typeof parsed.final === 'boolean' ? parsed.final : false,
+    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.9
   };
 }
 
@@ -65,7 +67,9 @@ async function callVLM(redactedImageBase64, goal, domStructure = []) {
     return JSON.stringify({
       action: 'click',
       selector: '#submit-grievance-btn',
-      reasoning: 'VLM (Simulated): All form fields are filled and verified. Ready to submit grievance.'
+      reasoning: 'VLM (Simulated): All form fields are filled and verified. Ready to submit grievance.',
+      final: true,
+      confidence: 0.95
     });
   }
 
