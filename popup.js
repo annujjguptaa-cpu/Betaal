@@ -306,11 +306,26 @@ function renderNotificationsTab() {
         <div style="font-size: 0.75rem; color: #f8fafc; margin-bottom: 6px;">${item.reason}</div>
         <div style="font-size: 0.7rem; color: #94a3b8; margin-bottom: 8px;">Target Page: ${item.siteUrl}</div>
         <div style="display: flex; gap: 8px;">
-          <button style="flex: 1; padding: 6px; background-color: #22c55e; color: white; border: none; border-radius: 4px; font-size: 0.75rem; cursor: pointer;" onclick="approveIntervention('${item.id}')">Approve & Continue</button>
-          <button style="flex: 1; padding: 6px; background-color: #ef4444; color: white; border: none; border-radius: 4px; font-size: 0.75rem; cursor: pointer;" onclick="stopIntervention('${item.id}')">Stop Here</button>
+          <button class="approve-btn" data-id="${item.id}" style="flex: 1; padding: 6px; background-color: #22c55e; color: white; border: none; border-radius: 4px; font-size: 0.75rem; cursor: pointer;">Approve & Continue</button>
+          <button class="stop-btn" data-id="${item.id}" style="flex: 1; padding: 6px; background-color: #ef4444; color: white; border: none; border-radius: 4px; font-size: 0.75rem; cursor: pointer;">Stop Here</button>
         </div>
       </div>
     `).join('');
+
+    // Attach event listeners safely without relying on inline onclick (CSP safe)
+    pendingContainer.querySelectorAll('.approve-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const id = e.target.getAttribute('data-id');
+        approveIntervention(id);
+      });
+    });
+
+    pendingContainer.querySelectorAll('.stop-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const id = e.target.getAttribute('data-id');
+        stopIntervention(id);
+      });
+    });
   }
 
   if (resolvedItems.length === 0) {
@@ -330,9 +345,16 @@ window.approveIntervention = async function (id) {
   const item = pendingInterventions.find((i) => i.id === id);
   if (item) {
     item.status = 'approved';
+    
+    // Switch UI back to Live View tab so status is visible
+    const liveViewBtn = document.querySelector('[data-tab="live-view-tab"]');
+    if (liveViewBtn) liveViewBtn.click();
+    
     renderNotificationsTab();
-    if (pausedLoopState) {
-      startAgentLoop(item.action);
+    
+    const targetAction = item.action || (pausedLoopState ? pausedLoopState.action : null);
+    if (targetAction) {
+      startAgentLoop(targetAction);
     }
   }
 };
