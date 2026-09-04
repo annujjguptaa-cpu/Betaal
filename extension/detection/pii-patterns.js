@@ -1,10 +1,10 @@
 /* extension/detection/pii-patterns.js */
 
-const AADHAAR_REGEX = /\b[2-9]\d{3}\s?\d{4}\s?\d{4}\b/;
+const AADHAAR_REGEX = /\b[2-9]\d{3}[\s-]?[0-9]{4}[\s-]?[0-9]{4}\b/;
 const PHONE_REGEX = /(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}\b/;
 const PAN_REGEX = /\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b/;
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-const ADDRESS_KEYWORDS = ['Road', 'Street', 'Sector', 'Nagar', 'Colony', 'Pin Code', 'District'];
+const ADDRESS_KEYWORDS = ['Road', 'Street', 'Sector', 'Nagar', 'Colony', 'Pin Code', 'District', 'MG Road'];
 
 // Scope Limitation Note: Specific formats (SSN, passport numbers, etc.) beyond India are not individually pattern-matched, only caught by this generic fallback — this is a stated scope limitation, not a bug.
 const GENERIC_DIGIT_ID_REGEX = /\b(?!\.?\d+\.\d+)(?![₹$\u20B9]\s*\d+)\d[\d\s-]{7,}\d\b/;

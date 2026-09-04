@@ -431,12 +431,35 @@ function renderNotificationsTab() {
   if (resolvedItems.length === 0) {
     resolvedContainer.innerHTML = `<p style="color: #64748b; font-size: 0.75rem;">No recent decisions.</p>`;
   } else {
-    resolvedContainer.innerHTML = resolvedItems.map((item) => `
-      <div style="padding: 6px 0; border-bottom: 1px solid #334155;">
-        <div style="font-size: 0.75rem; color: #cbd5e1;">Decision: <b style="color: ${item.status === 'approved' ? '#4ade80' : '#f87171'}">${item.status.toUpperCase()}</b></div>
-        <div style="font-size: 0.7rem; color: #94a3b8;">${item.reason}</div>
+    resolvedContainer.innerHTML = `
+      <div style="display: flex; justify-content: flex-end; margin-bottom: 4px;">
+        <button id="clear-resolved-btn" style="background: none; border: none; color: #ef4444; font-size: 0.7rem; cursor: pointer;">Clear Decisions History</button>
+      </div>
+    ` + resolvedItems.map((item) => `
+      <div style="padding: 6px 0; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <div style="font-size: 0.75rem; color: #cbd5e1;">Decision: <b style="color: ${item.status === 'approved' ? '#4ade80' : '#f87171'}">${item.status.toUpperCase()}</b></div>
+          <div style="font-size: 0.7rem; color: #94a3b8;">${item.reason}</div>
+        </div>
+        <button class="delete-notif-btn" data-id="${item.id}" style="background: transparent; border: none; color: #64748b; font-size: 0.75rem; cursor: pointer; padding: 2px 6px;">✕</button>
       </div>
     `).join('');
+
+    const clearBtn = document.getElementById('clear-resolved-btn');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        pendingInterventions = pendingInterventions.filter((i) => i.status === 'pending');
+        renderNotificationsTab();
+      });
+    }
+
+    resolvedContainer.querySelectorAll('.delete-notif-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const id = e.target.getAttribute('data-id');
+        pendingInterventions = pendingInterventions.filter((i) => i.id !== id);
+        renderNotificationsTab();
+      });
+    });
   }
 }
 
@@ -445,6 +468,9 @@ window.approveIntervention = async function (id) {
   const item = pendingInterventions.find((i) => i.id === id);
   if (item) {
     item.status = 'approved';
+    
+    // Clear badge count since pending is resolved
+    browser.runtime.sendMessage({ type: 'UPDATE_BADGE_COUNT', count: 0 }).catch(() => {});
     
     // Switch UI back to Live View tab so status is visible
     const liveViewBtn = document.querySelector('[data-tab="live-view-tab"]');
@@ -463,6 +489,9 @@ window.stopIntervention = async function (id) {
   const item = pendingInterventions.find((i) => i.id === id);
   if (item) {
     item.status = 'stopped';
+
+    // Clear badge count
+    browser.runtime.sendMessage({ type: 'UPDATE_BADGE_COUNT', count: 0 }).catch(() => {});
     renderNotificationsTab();
 
     const tabs = await browser.tabs.query({ active: true, currentWindow: true });
