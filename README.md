@@ -62,52 +62,52 @@ Betaal includes native cross-browser support and a built-in `browser-polyfill.js
 
 ```mermaid
 flowchart TD
-    A[User Opens Extension Popup] --> B[Enter Custom Goal in Input Box]
-    B --> C[Click 'Run Agent' Button]
+    A["User Opens Extension Popup"] --> B["Enter Custom Goal in Input Box"]
+    B --> C["Click 'Run Agent' Button"]
     
     subgraph ClientSide ["🔒 Client-Side Browser (100% Private)"]
-        C --> D[Capture Visible Webpage Screenshot]
-        D --> E[ViT Vision Screen Classification]
-        E --> F[Tesseract.js OCR Text Extraction]
-        F --> G[PII Detection: Aadhaar / Phone / PAN / Email / 9+ Digits]
-        D --> H[BlazeFace ONNX Face Detection]
-        G --> I[HTML5 Canvas Redaction Engine]
+        C --> D["Capture Visible Webpage Screenshot"]
+        D --> E["ViT Vision Screen Classification"]
+        E --> F["Tesseract.js OCR Text Extraction"]
+        F --> G["PII Detection: Aadhaar / Phone / PAN / Email / 9+ Digits"]
+        D --> H["BlazeFace ONNX Face Detection"]
+        G --> I["HTML5 Canvas Redaction Engine"]
         H --> I
-        I --> J[Apply Solid Blackfill on PII & Block Pixelation on Faces]
+        I --> J["Apply Solid Blackfill on PII & Block Pixelation on Faces"]
         
-        K[Content Script: Extract DOM Structure & Shadow DOM]
+        K["Content Script: Extract DOM Structure & Shadow DOM"]
     end
     
-    J --> L[Send Redacted Image + DOM Structure + Goal]
+    J --> L["Send Redacted Image + DOM Structure + Goal"]
     K --> L
     
     subgraph BackendServer ["☁️ Express Backend VLM Engine"]
-        L --> M{API Key Available?}
-        M -- Yes --> N[Call Gemini 1.5 Flash / Claude VLM API]
-        M -- No --> O[Engage Intelligent Local VLM Fallback Engine]
-        N --> P[Generate JSON Response: action, selector, final, confidence]
+        L --> M{"API Key Available?"}
+        M -- "Yes" --> N["Call Gemini 1.5 Flash / Claude VLM API"]
+        M -- "No" --> O["Engage Intelligent Local VLM Fallback Engine"]
+        N --> P["Generate JSON Response: action, selector, final, confidence"]
         O --> P
     end
     
-    P --> Q[Receive Action Payload in Browser]
+    P --> Q["Receive Action Payload in Browser"]
     
     subgraph AgentLoop ["🔄 Client-Side Execution & Safety Loop"]
-        Q --> R{Needs Human Intervention?}
-        R -- Yes: Low confidence / Final action / File input / Repeated failures --> S[Pause Loop & Trigger OS Notification + Badge Count]
-        S --> T[User Approves or Stops in Notifications Tab]
-        T -- Approved --> U
+        Q --> R{"Needs Human Intervention?"}
+        R -- "Yes: Low confidence / Final action / File input / Repeated failures" --> S["Pause Loop & Trigger OS Notification + Badge Count"]
+        S --> T["User Approves or Stops in Notifications Tab"]
+        T -- "Approved" --> U
         
-        R -- No --> U[Validate Selector Presence on Page]
-        U -- Missing Selector --> V[Re-prompt Backend with Available DOM List (Max 2 Retries)]
+        R -- "No" --> U["Validate Selector Presence on Page"]
+        U -- "Missing Selector" --> V["Re-prompt Backend with Available DOM List (Max 2 Retries)"]
         V --> P
         
-        U -- Valid Selector --> W[Execute Action: Click / Scroll / Type with Red Outline Highlight]
-        W --> X{Task Final or Safety Cap 15 Reached?}
-        X -- No --> D
-        X -- Yes --> Y[Log Outcome to Durable Vault Storage]
+        U -- "Valid Selector" --> W["Execute Action: Click / Scroll / Type with Red Outline Highlight"]
+        W --> X{"Task Final or Safety Cap 15 Reached?"}
+        X -- "No" --> D
+        X -- "Yes" --> Y["Log Outcome to Durable Vault Storage"]
     end
     
-    Y --> Z[Task Completed Successfully 🎉]
+    Y --> Z["Task Completed Successfully 🎉"]
 ```
 
 ---
