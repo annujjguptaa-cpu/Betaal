@@ -133,8 +133,23 @@ async function startAgentLoop(resumeAction = null) {
 
       // Stage 2: Extract DOM Structure
       addStatus('⏳ Fetching page DOM structure...');
-      const domRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
-      const domStructure = (domRes && domRes.success) ? domRes.domStructure : [];
+      let domStructure = [];
+      try {
+        const domRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
+        domStructure = (domRes && domRes.success) ? domRes.domStructure : [];
+      } catch (connErr) {
+        addStatus('⚠️ Content script not ready on page. Attempting auto-injection...');
+        try {
+          await browser.scripting.executeScript({
+            target: { tabId: tabs[0].id },
+            files: ['extension/browser-polyfill.js', 'extension/action-executor.js', 'content.js']
+          });
+          const retryDomRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
+          domStructure = (retryDomRes && retryDomRes.success) ? retryDomRes.domStructure : [];
+        } catch (injectErr) {
+          throw new Error('Please refresh the webpage tab once to connect Betaal to this page.');
+        }
+      }
 
       // Stage 3: Process Privacy Pipeline (Dual OCR + DOM Field Inspection)
       addStatus('⏳ Running local vision redaction pipeline...');
