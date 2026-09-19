@@ -293,6 +293,7 @@
     <button class="tab-btn active" data-tab="live-view-tab">Live View</button>
     <button class="tab-btn" data-tab="vault-tab">Vault</button>
     <button class="tab-btn" data-tab="notifications-tab">Notifications</button>
+    <button class="tab-btn" data-tab="policy-tab">Policy</button>
   </div>
 
   <!-- Tab 1: Live View -->
@@ -339,6 +340,52 @@
     </div>
   </div>
 
+  <!-- Tab 4: Policy -->
+  <div id="policy-tab" class="tab-content">
+    <div id="policy-site-banner" style="background: #1e293b; border: 1px solid #38bdf8; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 0.78rem; color: #38bdf8;">
+      Active policy for this site: <b id="policy-active-hostname">global</b> <span id="policy-override-badge" style="font-size: 0.7rem; background: #0284c7; color: white; padding: 2px 6px; border-radius: 4px; display: none; margin-left: 6px;">Site Override Active</span>
+    </div>
+
+    <!-- Performance Mode Selector -->
+    <div style="background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+      <label style="font-size: 0.8rem; font-weight: bold; color: #f8fafc; display: block; margin-bottom: 4px;">⚡ Performance Mode</label>
+      <select id="perf-mode-select" style="width: 100%; padding: 6px; background-color: #0f172a; color: #f8fafc; border: 1px solid #334155; border-radius: 4px; font-size: 0.8rem;">
+        <option value="fast">Fast Mode (Skip ViT classification, direct detection)</option>
+        <option value="balanced" selected>Balanced Mode (Default: ViT classify then detect)</option>
+        <option value="accurate">Accurate Mode (1.5x upscaled detection sensitivity)</option>
+      </select>
+    </div>
+
+    <!-- Rule Toggles Table -->
+    <div style="background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+      <h3 style="font-size: 0.85rem; color: #38bdf8; margin-bottom: 10px;">Global PII & Biometric Redaction Rules</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.78rem;">
+        <thead>
+          <tr style="text-align: left; color: #94a3b8; border-bottom: 1px solid #334155;">
+            <th style="padding-bottom: 6px;">PII Category</th>
+            <th style="padding-bottom: 6px; text-align: center;">Enabled</th>
+            <th style="padding-bottom: 6px;">Redaction Method</th>
+          </tr>
+        </thead>
+        <tbody id="policy-rules-tbody">
+          <!-- Dynamically populated -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Site Overrides Section -->
+    <div style="background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px;">
+      <h3 style="font-size: 0.85rem; color: #38bdf8; margin-bottom: 8px;">Site-Specific Overrides</h3>
+      <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+        <input id="override-hostname-input" type="text" placeholder="e.g. localhost or example.com" style="flex: 1; padding: 6px; background-color: #0f172a; color: #f8fafc; border: 1px solid #334155; border-radius: 4px; font-size: 0.78rem;">
+        <button id="add-override-btn" style="padding: 6px 12px; background-color: #0284c7; color: white; border: none; border-radius: 4px; font-size: 0.78rem; cursor: pointer; width: auto;">Add Override</button>
+      </div>
+      <div id="override-chips-container" style="display: flex; flex-wrap: wrap; gap: 6px;">
+        <!-- Dynamically populated chips -->
+      </div>
+    </div>
+  </div>
+
   <!-- Image Zoom Modal -->
   <div id="image-modal" class="image-modal">
     <img id="modal-img" src="" alt="Enlarged View" />
@@ -354,6 +401,7 @@
   <script src="extension/detection/vit-classifier.js"></script>
   <script src="extension/detection/face-detect.js"></script>
   <script src="extension/redaction/redact.js"></script>
+  <script src="extension/policy-book.js"></script>
   <script src="extension/pipeline.js"></script>
   <script src="extension/network.js"></script>
   <script src="extension/intervention-rules.js"></script>

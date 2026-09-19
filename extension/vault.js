@@ -14,6 +14,11 @@ async function saveToVault(entry) {
     siteUrl: entry.siteUrl || 'Unknown Site',
     piiCount: entry.piiCount || 0,
     faceCount: entry.faceCount || 0,
+    detectedCount: typeof entry.detectedCount === 'number' ? entry.detectedCount : (entry.piiCount || 0) + (entry.faceCount || 0),
+    redactedCount: typeof entry.redactedCount === 'number' ? entry.redactedCount : (entry.piiCount || 0) + (entry.faceCount || 0),
+    skippedCount: typeof entry.skippedCount === 'number' ? entry.skippedCount : 0,
+    performanceMode: entry.performanceMode || 'balanced',
+    policySnapshot: entry.policySnapshot || {},
     actionsTaken: entry.actionsTaken || [],
     outcome: entry.outcome || 'completed' // 'completed' | 'paused' | 'stopped'
   };

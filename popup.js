@@ -151,20 +151,21 @@ async function startAgentLoop(resumeAction = null) {
         }
       }
 
-      // Stage 3: Process Privacy Pipeline (Dual OCR + DOM Field Inspection)
+      // Stage 3: Process Privacy Pipeline (Dual OCR + DOM Field Inspection + Effective Policy)
       addStatus('⏳ Running local vision redaction pipeline...');
-      const pipelineRes = await processScreenshot(captureRes.dataUrl, domStructure);
+      const pipelineRes = await processScreenshot(captureRes.dataUrl, domStructure, currentTabUrl);
       totalPiiCount = Math.max(totalPiiCount, pipelineRes.counts.piiFields);
       totalFaceCount = Math.max(totalFaceCount, pipelineRes.counts.faces);
       const payloadImage = isRedactionEnabled ? pipelineRes.redactedImage : pipelineRes.originalImage;
 
-      // Render Live Timing Breakdown Telemetry
+      // Render Live Timing & Policy Counts Breakdown Telemetry
       const tEl = document.getElementById('live-timer');
       if (tEl) {
-        tEl.innerHTML = `⏱️ <b>Timing Breakdown:</b><br>` +
+        tEl.innerHTML = `⏱️ <b>Timing Breakdown (${(pipelineRes.performanceMode || 'balanced').toUpperCase()} Mode):</b><br>` +
           `Classify: ${pipelineRes.timing.classification}ms | ` +
           `PII Detection: ${pipelineRes.timing.piiDetection}ms | Face Detection: ${pipelineRes.timing.faceDetection}ms | ` +
-          `Redaction: ${pipelineRes.timing.redaction}ms`;
+          `Redaction: ${pipelineRes.timing.redaction}ms<br>` +
+          `📊 <b>Policy Tally:</b> ${pipelineRes.counts.detected} detected, ${pipelineRes.counts.redacted} redacted, ${pipelineRes.counts.skipped} skipped by policy`;
       }
 
       // Render Side-by-Side Thumbnails (Original vs Redacted View)
@@ -241,13 +242,17 @@ async function startAgentLoop(resumeAction = null) {
         const safeLabel = formatSafeType(region.type);
         const safeText = region.type === 'face' ? '[Face Detection Box]' : `${safeLabel} [HIDDEN]`;
         const methodLabel = region.method === 'blur' ? 'Irreversible Pixelation' : 'Solid Blackfill';
+        const isEnabled = region.enabled !== false;
+        const statusHtml = isEnabled
+          ? `<span class="status-tag">REDACTED</span>`
+          : `<span style="font-weight:600; color:#f87171;">SKIPPED BY POLICY</span>`;
 
         tableRows += `
           <tr>
             <td><b>${safeLabel}</b></td>
             <td>${safeText}</td>
             <td>${methodLabel}</td>
-            <td><span class="status-tag">REDACTED</span></td>
+            <td>${statusHtml}</td>
           </tr>
         `;
       });
@@ -297,6 +302,11 @@ async function startAgentLoop(resumeAction = null) {
           siteUrl: currentTabUrl,
           piiCount: totalPiiCount,
           faceCount: totalFaceCount,
+          detectedCount: pipelineRes.counts.detected,
+          redactedCount: pipelineRes.counts.redacted,
+          skippedCount: pipelineRes.counts.skipped,
+          performanceMode: pipelineRes.performanceMode,
+          policySnapshot: pipelineRes.policySnapshot,
           actionsTaken,
           outcome: 'paused'
         });
@@ -353,6 +363,11 @@ async function startAgentLoop(resumeAction = null) {
       siteUrl: currentTabUrl,
       piiCount: totalPiiCount,
       faceCount: totalFaceCount,
+      detectedCount: pipelineRes ? pipelineRes.counts.detected : totalPiiCount + totalFaceCount,
+      redactedCount: pipelineRes ? pipelineRes.counts.redacted : totalPiiCount + totalFaceCount,
+      skippedCount: pipelineRes ? pipelineRes.counts.skipped : 0,
+      performanceMode: pipelineRes ? pipelineRes.performanceMode : 'balanced',
+      policySnapshot: pipelineRes ? pipelineRes.policySnapshot : {},
       actionsTaken,
       outcome: finalOutcome
     });
@@ -370,7 +385,33 @@ async function startAgentLoop(resumeAction = null) {
   }
 }
 
-// Vault Tab Rendering
+// Tab Switching Handler
+document.addEventListener('DOMContentLoaded', async () => {
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetTabId = btn.getAttribute('data-tab');
+      tabBtns.forEach((b) => b.classList.remove('active'));
+      tabContents.forEach((c) => c.classList.remove('active'));
+
+      btn.classList.add('active');
+      const targetContent = document.getElementById(targetTabId);
+      if (targetContent) targetContent.classList.add('active');
+
+      if (targetTabId === 'vault-tab') renderVaultTab();
+      if (targetTabId === 'notifications-tab') renderNotificationsTab();
+      if (targetTabId === 'policy-tab') renderPolicyTab();
+    });
+  });
+
+  renderVaultTab();
+  renderNotificationsTab();
+  renderPolicyTab();
+});
+
+// Vault Tab Rendering with Policy Snapshot Expander
 async function renderVaultTab() {
   const vaultListContainer = document.getElementById('vault-list');
   if (!vaultListContainer) return;
@@ -386,6 +427,14 @@ async function renderVaultTab() {
     const timeStr = new Date(entry.timestamp).toLocaleString();
     const actionsSummary = entry.actionsTaken.length > 0 ? entry.actionsTaken.join(' ➔ ') : 'No actions';
     const badgeColor = entry.outcome === 'completed' ? '#4ade80' : (entry.outcome === 'paused' ? '#38bdf8' : '#f87171');
+    const perfMode = (entry.performanceMode || 'balanced').toUpperCase();
+
+    // Render snapshot rules summary safely (no raw PII)
+    const snapshotRules = entry.policySnapshot || {};
+    const rulesList = Object.entries(snapshotRules).map(([rule, cfg]) => {
+      const state = cfg.enabled ? `<span style="color:#4ade80;">ON (${cfg.method || 'blackfill'})</span>` : `<span style="color:#f87171;">OFF (Skipped)</span>`;
+      return `${rule}: ${state}`;
+    }).join(' | ') || 'Default Policy';
 
     return `
       <div style="background-color: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px; margin-bottom: 8px;">
@@ -393,8 +442,20 @@ async function renderVaultTab() {
           <span style="font-weight: bold; color: #f8fafc; font-size: 0.82rem;">${entry.siteUrl}</span>
           <span style="font-size: 0.7rem; color: ${badgeColor}; font-weight: bold; text-transform: uppercase;">${entry.outcome}</span>
         </div>
-        <div style="font-size: 0.72rem; color: #94a3b8; margin-bottom: 6px;">${timeStr} | PII Redacted: ${entry.piiCount} | Faces: ${entry.faceCount}</div>
-        <div style="font-size: 0.75rem; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Actions: ${actionsSummary}</div>
+        <div style="font-size: 0.72rem; color: #94a3b8; margin-bottom: 4px;">
+          ${timeStr} | Mode: <b style="color:#38bdf8;">${perfMode}</b> | Redacted: ${entry.redactedCount || entry.piiCount || 0} | Skipped: ${entry.skippedCount || 0}
+        </div>
+        <div style="font-size: 0.75rem; color: #cbd5e1; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          Actions: ${actionsSummary}
+        </div>
+        
+        <!-- Expandable Policy Used Section -->
+        <details style="font-size: 0.7rem; color: #94a3b8; background: #0f172a; padding: 4px 8px; border-radius: 4px; border: 1px solid #334155;">
+          <summary style="cursor: pointer; font-weight: bold; color: #38bdf8;">📜 Policy Used Snapshot</summary>
+          <div style="margin-top: 4px; line-height: 1.4; word-break: break-word;">
+            ${rulesList}
+          </div>
+        </details>
       </div>
     `;
   }).join('');
@@ -524,3 +585,139 @@ window.stopIntervention = async function (id) {
     updateBadgeState('ready', 'Stopped');
   }
 };
+
+// Policy Tab Settings UI Wiring
+async function renderPolicyTab() {
+  const rulesTbody = document.getElementById('policy-rules-tbody');
+  const chipsContainer = document.getElementById('override-chips-container');
+  const perfSelect = document.getElementById('perf-mode-select');
+  const activeHostnameEl = document.getElementById('policy-active-hostname');
+  const overrideBadgeEl = document.getElementById('policy-override-badge');
+
+  if (!rulesTbody) return;
+
+  // Active Site Banner
+  const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+  const currentTabUrl = tabs && tabs[0] ? tabs[0].url : 'global';
+  const effectivePolicy = await getEffectivePolicy(currentTabUrl);
+
+  if (activeHostnameEl) activeHostnameEl.textContent = effectivePolicy.hostname;
+  if (overrideBadgeEl) {
+    overrideBadgeEl.style.display = effectivePolicy.hasOverride ? 'inline-block' : 'none';
+  }
+
+  // Load Policy Configuration
+  const policy = await getPolicy();
+  if (perfSelect) perfSelect.value = policy.performanceMode || 'balanced';
+
+  const categoryLabels = {
+    aadhaar: 'Aadhaar Number',
+    phone: 'Phone Number',
+    address: 'Address Text',
+    email: 'Email Address',
+    pan: 'PAN Card Number',
+    possibleIdNumber: 'Possible ID (9+ Digits)',
+    faces: 'User Face Biometrics'
+  };
+
+  // Render Rules Table
+  rulesTbody.innerHTML = Object.keys(categoryLabels).map((key) => {
+    const rule = policy.rules[key] || { enabled: true, method: key === 'faces' ? 'blur' : 'blackfill' };
+    const label = categoryLabels[key];
+    const isChecked = rule.enabled ? 'checked' : '';
+    const methodSelect = key === 'faces'
+      ? `<span style="font-size:0.75rem; color:#94a3b8;">Blur (Pixelation)</span>`
+      : `<select class="policy-method-select" data-key="${key}" style="padding: 2px 4px; background:#0f172a; color:#f8fafc; border:1px solid #334155; border-radius:4px; font-size:0.75rem;">
+           <option value="blackfill" ${rule.method === 'blackfill' ? 'selected' : ''}>Solid Blackfill</option>
+           <option value="blur" ${rule.method === 'blur' ? 'selected' : ''}>Irreversible Blur</option>
+         </select>`;
+
+    return `
+      <tr style="border-bottom: 1px solid #334155;">
+        <td style="padding: 6px 0; color:#f8fafc;"><b>${label}</b></td>
+        <td style="text-align: center;">
+          <input type="checkbox" class="policy-enable-toggle" data-key="${key}" ${isChecked}>
+        </td>
+        <td>${methodSelect}</td>
+      </tr>
+    `;
+  }).join('');
+
+  // Render Site Override Chips
+  const overrides = policy.siteOverrides || {};
+  const overrideKeys = Object.keys(overrides);
+
+  if (chipsContainer) {
+    if (overrideKeys.length === 0) {
+      chipsContainer.innerHTML = `<span style="font-size:0.75rem; color:#64748b;">No site-specific overrides added yet.</span>`;
+    } else {
+      chipsContainer.innerHTML = overrideKeys.map((host) => `
+        <span style="font-size:0.75rem; background:#334155; color:#38bdf8; padding:3px 8px; border-radius:12px; display:inline-flex; align-items:center; gap:6px;">
+          ${host}
+          <button class="remove-chip-btn" data-host="${host}" style="background:transparent; border:none; color:#f87171; cursor:pointer; font-weight:bold; padding:0;">✕</button>
+        </span>
+      `).join('');
+    }
+  }
+
+  // Bind Rule Toggles
+  document.querySelectorAll('.policy-enable-toggle').forEach((chk) => {
+    chk.addEventListener('change', async (e) => {
+      const key = e.target.getAttribute('data-key');
+      const current = await getPolicy();
+      current.rules[key].enabled = e.target.checked;
+      await savePolicy(current);
+      renderPolicyTab();
+    });
+  });
+
+  // Bind Method Selects
+  document.querySelectorAll('.policy-method-select').forEach((sel) => {
+    sel.addEventListener('change', async (e) => {
+      const key = e.target.getAttribute('data-key');
+      const current = await getPolicy();
+      current.rules[key].method = e.target.value;
+      await savePolicy(current);
+      renderPolicyTab();
+    });
+  });
+
+  // Bind Performance Mode Selector
+  if (perfSelect) {
+    perfSelect.addEventListener('change', async (e) => {
+      const current = await getPolicy();
+      current.performanceMode = e.target.value;
+      await savePolicy(current);
+    });
+  }
+
+  // Bind Add Override Button
+  const addBtn = document.getElementById('add-override-btn');
+  const hostInput = document.getElementById('override-hostname-input');
+  if (addBtn && hostInput) {
+    addBtn.onclick = async () => {
+      const hostVal = hostInput.value.trim().toLowerCase();
+      if (!hostVal) return;
+      const current = await getPolicy();
+      current.siteOverrides[hostVal] = {
+        address: { enabled: false, method: 'blackfill' }
+      };
+      await savePolicy(current);
+      hostInput.value = '';
+      renderPolicyTab();
+    };
+  }
+
+  // Bind Remove Override Chips
+  document.querySelectorAll('.remove-chip-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const host = e.target.getAttribute('data-host');
+      const current = await getPolicy();
+      if (current.siteOverrides && current.siteOverrides[host]) {
+        delete current.siteOverrides[host];
+        await savePolicy(current);
+        renderPolicyTab();
+      }
+    });
+  });
+}
