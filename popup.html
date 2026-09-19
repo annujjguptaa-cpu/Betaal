@@ -273,11 +273,32 @@
       border-bottom-color: #38bdf8;
       background: transparent;
     }
-    .tab-content {
-      display: none;
+    /* Segmented Control Styling */
+    .segmented-control {
+      display: flex;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 3px;
+      margin-bottom: 12px;
     }
-    .tab-content.active {
-      display: block;
+    .segmented-btn {
+      flex: 1;
+      padding: 6px 0;
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+    .segmented-btn.active {
+      background: #0284c7;
+      color: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     }
   </style>
 </head>
@@ -298,6 +319,16 @@
 
   <!-- Tab 1: Live View -->
   <div id="live-view-tab" class="tab-content active">
+    <!-- Performance Mode Segmented Control -->
+    <div style="margin-bottom: 4px;">
+      <span style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Performance Mode:</span>
+      <div class="segmented-control" id="perf-segmented-control">
+        <button class="segmented-btn" data-mode="fast">Fast</button>
+        <button class="segmented-btn active" data-mode="balanced">Balanced</button>
+        <button class="segmented-btn" data-mode="accurate">Accurate</button>
+      </div>
+    </div>
+
     <div class="toggle-card">
       <div class="toggle-row">
         <span id="toggle-status-text" class="toggle-label on">Redaction: ON</span>
@@ -316,7 +347,12 @@
       <div id="goal-error" style="color: #ef4444; font-size: 0.75rem; margin-top: 4px; display: none;">Please enter a goal before running the agent.</div>
     </div>
 
-    <button id="run-agent-btn">Run Agent</button>
+    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+      <button id="run-agent-btn" style="flex: 2;">Run Agent</button>
+      <button id="compare-modes-btn" style="flex: 1; background-color: #0284c7; padding: 10px; font-size: 0.82rem;">⚡ Compare Modes</button>
+    </div>
+
+    <div id="mode-comparison-container" style="display: none; margin-bottom: 12px;"></div>
 
     <div id="status-list"></div>
     <div id="debug-panel"></div>

@@ -1,58 +1,131 @@
-/* popup.js */
+let selectedPerformanceMode = 'balanced';
 
-let timerInterval = null;
-let startTime = 0;
-let pendingInterventions = [];
-let pausedLoopState = null; // Stores state when agent loop pauses for human intervention
+// Segmented Control Event Handler
+document.addEventListener('DOMContentLoaded', async () => {
+  const segmentedBtns = document.querySelectorAll('.segmented-btn');
+  const policy = await getPolicy();
+  selectedPerformanceMode = policy.performanceMode || 'balanced';
 
-// Tab Switching Handler
-document.addEventListener('DOMContentLoaded', () => {
-  const tabBtns = document.querySelectorAll('.tab-btn');
-  const tabContents = document.querySelectorAll('.tab-content');
-
-  tabBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const targetTabId = btn.getAttribute('data-tab');
-      tabBtns.forEach((b) => b.classList.remove('active'));
-      tabContents.forEach((c) => c.classList.remove('active'));
-
+  segmentedBtns.forEach((btn) => {
+    const mode = btn.getAttribute('data-mode');
+    if (mode === selectedPerformanceMode) {
       btn.classList.add('active');
-      const targetContent = document.getElementById(targetTabId);
-      if (targetContent) targetContent.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
 
-      if (targetTabId === 'vault-tab') renderVaultTab();
-      if (targetTabId === 'notifications-tab') renderNotificationsTab();
+    btn.addEventListener('click', async () => {
+      segmentedBtns.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedPerformanceMode = mode;
+      console.log(`[Performance Mode Switch]: Switched to ${selectedPerformanceMode.toUpperCase()} mode.`);
+
+      // Persist to policy storage
+      const currentPolicy = await getPolicy();
+      currentPolicy.performanceMode = selectedPerformanceMode;
+      await savePolicy(currentPolicy);
     });
   });
 
-  renderVaultTab();
-  renderNotificationsTab();
+  const compareBtn = document.getElementById('compare-modes-btn');
+  if (compareBtn) {
+    compareBtn.addEventListener('click', runModeComparison);
+  }
 });
 
-function updateBadgeState(state, text) {
-  const badge = document.getElementById('state-badge');
-  if (!badge) return;
-  badge.className = `badge ${state}`;
-  badge.textContent = text;
-}
+// Run Mode Comparison Handler (Runs same screenshot through Fast, Balanced, Accurate sequentially)
+async function runModeComparison() {
+  const compareBtn = document.getElementById('compare-modes-btn');
+  const container = document.getElementById('mode-comparison-container');
+  if (!container) return;
 
-// Redaction Toggle Handler
-const redactionToggle = document.getElementById('redaction-toggle');
-const toggleStatusText = document.getElementById('toggle-status-text');
-const toggleWarningMsg = document.getElementById('toggle-warning-msg');
+  compareBtn.disabled = true;
+  compareBtn.textContent = '⏳ Comparing...';
+  container.style.display = 'block';
+  container.innerHTML = `<div style="color:#38bdf8; font-size:0.8rem; text-align:center; padding:12px; background:#1e293b; border-radius:6px;">⏳ Capturing screenshot & running sequential comparison across Fast, Balanced, and Accurate modes...</div>`;
 
-if (redactionToggle) {
-  redactionToggle.addEventListener('change', () => {
-    if (redactionToggle.checked) {
-      toggleStatusText.textContent = 'Redaction: ON';
-      toggleStatusText.className = 'toggle-label on';
-      toggleWarningMsg.style.display = 'none';
-    } else {
-      toggleStatusText.textContent = 'Redaction: OFF';
-      toggleStatusText.className = 'toggle-label off';
-      toggleWarningMsg.style.display = 'block';
+  try {
+    const captureRes = await browser.runtime.sendMessage({ type: 'CAPTURE_SCREEN' });
+    if (!captureRes || !captureRes.success) {
+      throw new Error(captureRes ? captureRes.error : 'Failed to capture screenshot for comparison.');
     }
-  });
+
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    const currentTabUrl = tabs && tabs[0] ? tabs[0].url : 'global';
+    let domStructure = [];
+    try {
+      const domRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
+      domStructure = (domRes && domRes.success) ? domRes.domStructure : [];
+    } catch (e) {}
+
+    // Save active mode to restore after comparison
+    const originalMode = selectedPerformanceMode;
+
+    // Run Fast Mode
+    const policyFast = await getPolicy();
+    policyFast.performanceMode = 'fast';
+    await savePolicy(policyFast);
+    const fastRes = await processScreenshot(captureRes.dataUrl, domStructure, currentTabUrl);
+
+    // Run Balanced Mode
+    const policyBal = await getPolicy();
+    policyBal.performanceMode = 'balanced';
+    await savePolicy(policyBal);
+    const balRes = await processScreenshot(captureRes.dataUrl, domStructure, currentTabUrl);
+
+    // Run Accurate Mode
+    const policyAcc = await getPolicy();
+    policyAcc.performanceMode = 'accurate';
+    await savePolicy(policyAcc);
+    const accRes = await processScreenshot(captureRes.dataUrl, domStructure, currentTabUrl);
+
+    // Restore original mode
+    const policyRestore = await getPolicy();
+    policyRestore.performanceMode = originalMode;
+    await savePolicy(policyRestore);
+
+    const modesData = [
+      { name: 'Fast Mode', mode: 'fast', data: fastRes },
+      { name: 'Balanced Mode', mode: 'balanced', data: balRes },
+      { name: 'Accurate Mode', mode: 'accurate', data: accRes }
+    ];
+
+    // Determine fastest mode latency and max detections
+    const minLatency = Math.min(...modesData.map(m => m.data.timing.total));
+    const maxDetections = Math.max(...modesData.map(m => m.data.counts.detected));
+
+    // Render 3-Column Comparison View
+    container.innerHTML = `
+      <div style="background:#1e293b; border:1px solid #38bdf8; border-radius:6px; padding:10px;">
+        <h3 style="font-size:0.85rem; color:#38bdf8; margin-bottom:8px; text-align:center;">⚡ Live Performance Mode Comparison</h3>
+        <div style="display:flex; gap:8px;">
+          ${modesData.map(m => {
+            const isFastest = m.data.timing.total === minLatency;
+            const isMostAccurate = m.data.counts.detected === maxDetections;
+            const badgeHtml = isFastest
+              ? `<span style="background:#22c55e; color:white; font-size:0.65rem; padding:2px 4px; border-radius:4px; font-weight:bold; display:block; margin-bottom:4px;">⚡ FASTEST</span>`
+              : (isMostAccurate ? `<span style="background:#a855f7; color:white; font-size:0.65rem; padding:2px 4px; border-radius:4px; font-weight:bold; display:block; margin-bottom:4px;">🎯 MOST DETECTIONS</span>` : '');
+
+            return `
+              <div style="flex:1; background:#0f172a; border:1px solid #334155; border-radius:4px; padding:6px; text-align:center;">
+                ${badgeHtml}
+                <div style="font-weight:bold; color:#f8fafc; font-size:0.75rem;">${m.name}</div>
+                <div style="font-size:0.7rem; color:#94a3b8; margin:2px 0;">Latency: <b style="color:#38bdf8;">${m.data.timing.total}ms</b></div>
+                <div style="font-size:0.7rem; color:#94a3b8; margin-bottom:4px;">Detected: <b style="color:#4ade80;">${m.data.counts.detected}</b> (Redacted: ${m.data.counts.redacted})</div>
+                <img src="${m.data.redactedImage}" style="width:100%; height:auto; border-radius:3px; border:1px solid #334155; cursor:pointer;" onclick="document.getElementById('modal-img').src='${m.data.redactedImage}'; document.getElementById('image-modal').style.display='flex';" />
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+  } catch (err) {
+    container.innerHTML = `<div style="color:#ef4444; font-size:0.75rem; padding:8px; background:#450a0a; border-radius:4px;">❌ Comparison error: ${err.message}</div>`;
+  } finally {
+    compareBtn.disabled = false;
+    compareBtn.textContent = '⚡ Compare Modes';
+  }
 }
 
 // Main Agent Loop Execution
