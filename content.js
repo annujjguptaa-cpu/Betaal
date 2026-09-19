@@ -83,13 +83,23 @@ function getDOMStructure() {
   // Prioritize visible elements over hidden ones, capped at 50
   const prioritized = [...visibleList, ...hiddenList].slice(0, 50);
 
-  return prioritized.map((el) => ({
-    tag: el.tagName.toLowerCase(),
-    id: el.id || '',
-    className: el.className || '',
-    text: el.innerText || (el.value && el.type === 'submit' ? el.value : ''),
-    placeholder: el.placeholder || ''
-  }));
+  return prioritized.map((el) => {
+    const rect = el.getBoundingClientRect();
+    return {
+      tag: el.tagName.toLowerCase(),
+      type: el.type || '',
+      id: el.id || '',
+      className: el.className || '',
+      text: el.innerText || (el.value && el.type === 'submit' ? el.value : ''),
+      placeholder: el.placeholder || '',
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height
+      }
+    };
+  });
 }
 
 // Listen for messages from background/popup

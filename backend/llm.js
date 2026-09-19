@@ -64,10 +64,57 @@ async function callVLM(redactedImageBase64, goal, domStructure = []) {
   const apiKey = process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     console.warn('[VLM] No API key found in environment (GEMINI_API_KEY / ANTHROPIC_API_KEY). Returning simulated VLM decision.');
+    
+    // Dynamic simulated VLM decision based on available DOM elements
+    const hasStep1Btn = domStructure.some(el => el.id === 'step1-next-btn');
+    const hasStep2Btn = domStructure.some(el => el.id === 'step2-next-btn');
+    const hasStep3Btn = domStructure.some(el => el.id === 'step3-next-btn' || el.id === 'photo-id-upload');
+    const hasFinalSubmitBtn = domStructure.some(el => el.id === 'final-submit-btn');
+
+    if (hasStep1Btn) {
+      return JSON.stringify({
+        action: 'click',
+        selector: '#step1-next-btn',
+        reasoning: 'VLM (Simulated): Personal details verified. Moving to Step 2 Address details.',
+        final: false,
+        confidence: 0.95
+      });
+    }
+
+    if (hasStep2Btn) {
+      return JSON.stringify({
+        action: 'click',
+        selector: '#step2-next-btn',
+        reasoning: 'VLM (Simulated): Address details verified. Moving to Step 3 Document upload.',
+        final: false,
+        confidence: 0.95
+      });
+    }
+
+    if (hasStep3Btn) {
+      return JSON.stringify({
+        action: 'click',
+        selector: '#photo-id-upload',
+        reasoning: 'VLM (Simulated): Selecting photo ID file input for document upload.',
+        final: false,
+        confidence: 0.90
+      });
+    }
+
+    if (hasFinalSubmitBtn) {
+      return JSON.stringify({
+        action: 'click',
+        selector: '#final-submit-btn',
+        reasoning: 'VLM (Simulated): Application review complete. Submitting final passport application.',
+        final: true,
+        confidence: 0.95
+      });
+    }
+
     return JSON.stringify({
       action: 'click',
       selector: '#submit-grievance-btn',
-      reasoning: 'VLM (Simulated): All form fields are filled and verified. Ready to submit grievance.',
+      reasoning: 'VLM (Simulated): All form fields verified. Submitting grievance.',
       final: true,
       confidence: 0.95
     });
