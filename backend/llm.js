@@ -121,41 +121,94 @@ async function callVLM(redactedImageBase64, goal, domStructure = []) {
   }
 
   try {
-    // Attempt Gemini VLM call if key present
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: promptText },
-              {
-                inline_data: {
-                  mime_type: 'image/png',
-                  data: redactedImageBase64.replace(/^data:image\/\w+;base64,/, '')
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
+
+    if (anthropicKey) {
+      console.log('[VLM] Calling Anthropic Claude VLM API (claude-3-5-sonnet-20241022)...');
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-sonnet-20241022',
+          max_tokens: 1024,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/png',
+                    data: redactedImageBase64.replace(/^data:image\/\w+;base64,/, '')
+                  }
+                },
+                {
+                  type: 'text',
+                  text: promptText
                 }
-              }
-            ]
-          }
-        ]
-      })
-    });
+              ]
+            }
+          ]
+        })
+      });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`HTTP ${response.status} - ${errText}`);
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`HTTP ${response.status} - ${errText}`);
+      }
+
+      const data = await response.json();
+      const duration = Math.round(performance.now() - startTime);
+      console.log(`[Claude VLM Success] Response received in ${duration} ms.`);
+
+      const rawContent = data.content?.[0]?.text;
+      if (!rawContent) {
+        throw new Error('Claude VLM returned empty response text.');
+      }
+      return rawContent;
+    } else {
+      console.log('[VLM] Calling Gemini 1.5 Flash VLM API...');
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: promptText },
+                {
+                  inline_data: {
+                    mime_type: 'image/png',
+                    data: redactedImageBase64.replace(/^data:image\/\w+;base64,/, '')
+                  }
+                }
+              ]
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`HTTP ${response.status} - ${errText}`);
+      }
+
+      const data = await response.json();
+      const duration = Math.round(performance.now() - startTime);
+      console.log(`[Gemini VLM Success] Response received in ${duration} ms.`);
+
+      const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawContent) {
+        throw new Error('Gemini VLM returned empty candidate content.');
+      }
+      return rawContent;
     }
-
-    const data = await response.json();
-    const duration = Math.round(performance.now() - startTime);
-    console.log(`[VLM Call Success] Response received in ${duration} ms.`);
-
-    const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawContent) {
-      throw new Error('VLM returned empty candidate content.');
-    }
-    return rawContent;
 
   } catch (error) {
     console.error('[VLM Call Failed]:', error.message);
