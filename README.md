@@ -116,25 +116,25 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    subgraph Browser Extension
-        UI[Popup UI] -->|User selects mode| Policy[Policy Store]
-        UI -->|Run Agent| Capture[Capture Screenshot]
-        Capture --> Pipeline[processScreenshot]
-        Pipeline -->|Load Model| LoadModel["loadFaceModel (per‑model cache)"]
-        Pipeline -->|Detect Faces| FaceDetect[detectFaces]
-        Pipeline -->|Detect PII| PIIDetect[detectSensitivePII]
-        Pipeline -->|(optional) Classify| ViT[ViT Classifier]
-        Pipeline -->|Redact| Redact[redactImage]
+    subgraph BrowserExtension ["Browser Extension"]
+        UI["Popup UI"] -->|User selects mode| Policy["Policy Store"]
+        UI -->|Run Agent| Capture["Capture Screenshot"]
+        Capture --> Pipeline["processScreenshot"]
+        Pipeline -->|Load Model| LoadModel["loadFaceModel (per-model cache)"]
+        Pipeline -->|Detect Faces| FaceDetect["detectFaces"]
+        Pipeline -->|Detect PII| PIIDetect["detectSensitivePII"]
+        Pipeline -->|"optional Classify"| ViT["ViT Classifier"]
+        Pipeline -->|Redact| Redact["redactImage"]
         Pipeline -->|Result| UI
     end
     
-    subgraph Build Tools
-        Quant[quantize_model.py] -->|Generates| FastModel[face_detector_fast.onnx]
-        Quant -->|Copies| BalancedModel[face_detector_balanced.onnx]
+    subgraph BuildTools ["Build Tools"]
+        Quant["quantize_model.py"] -->|Generates| FastModel["face_detector_fast.onnx"]
+        Quant -->|Copies| BalancedModel["face_detector_balanced.onnx"]
     end
     
-    Browser Extension -->|Uses| FastModel
-    Browser Extension -->|Uses| BalancedModel
+    Pipeline -->|Uses| FastModel
+    Pipeline -->|Uses| BalancedModel
 ```
 
 ---
