@@ -1167,4 +1167,44 @@ async function renderPolicyTab() {
       }
     });
   });
+
+  // Prompt 90: Bind Backend URL Override Settings
+  const backendInput = document.getElementById('backend-url-input');
+  const saveBackendBtn = document.getElementById('save-backend-url-btn');
+  const resetBackendBtn = document.getElementById('reset-backend-url-btn');
+  const backendStatus = document.getElementById('backend-url-status');
+
+  if (backendInput) {
+    // Load existing backendUrl
+    browser.storage.local.get(['backendUrl']).then(res => {
+      backendInput.value = res.backendUrl || 'http://localhost:3000';
+    }).catch(() => {});
+  }
+
+  if (saveBackendBtn && backendInput) {
+    saveBackendBtn.onclick = async () => {
+      const val = backendInput.value.trim();
+      if (!val) return;
+      await browser.storage.local.set({ backendUrl: val });
+      if (backendStatus) {
+        backendStatus.textContent = '✅ Endpoint saved!';
+        backendStatus.style.color = '#4ade80';
+        backendStatus.style.display = 'inline-block';
+        setTimeout(() => { backendStatus.style.display = 'none'; }, 2000);
+      }
+    };
+  }
+
+  if (resetBackendBtn && backendInput) {
+    resetBackendBtn.onclick = async () => {
+      await browser.storage.local.remove(['backendUrl']);
+      backendInput.value = 'http://localhost:3000';
+      if (backendStatus) {
+        backendStatus.textContent = '🔄 Reset to default.';
+        backendStatus.style.color = '#94a3b8';
+        backendStatus.style.display = 'inline-block';
+        setTimeout(() => { backendStatus.style.display = 'none'; }, 2000);
+      }
+    };
+  }
 }

@@ -1,6 +1,29 @@
-/* extension/network.js — Prompt 87 */
+/* extension/network.js — Prompts 87 & 90 */
 
-const BACKEND_URL = 'http://localhost:3000';
+const DEFAULT_BACKEND_URL = 'http://localhost:3000';
+
+/**
+ * Reads configured backend URL from chrome.storage.local key 'backendUrl', defaulting to http://localhost:3000
+ * @returns {Promise<string>}
+ */
+async function getBackendUrl() {
+  try {
+    let url = null;
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      const res = await chrome.storage.local.get(['backendUrl']);
+      url = res.backendUrl;
+    } else if (typeof browser !== 'undefined' && browser.storage && browser.storage.local) {
+      const res = await browser.storage.local.get(['backendUrl']);
+      url = res.backendUrl;
+    }
+    if (url && typeof url === 'string' && url.trim()) {
+      return url.trim().replace(/\/+$/, ''); // Strip trailing slash
+    }
+  } catch (err) {
+    console.warn('[network.js] Failed to read backendUrl from storage:', err);
+  }
+  return DEFAULT_BACKEND_URL;
+}
 
 /**
  * Sends redacted image, goal, DOM structure, and retrieved RAG examples to the backend Express server.
@@ -11,6 +34,8 @@ const BACKEND_URL = 'http://localhost:3000';
  * @returns {Promise<{action: string, selector: string, reasoning: string}>}
  */
 async function sendToBackend(redactedImage, goal, domStructure = [], customRetrievedExamples = null) {
+  const backendUrl = await getBackendUrl();
+
   try {
     // Prompt 87: Compute structural signature & retrieve RAG examples before sending payload
     let retrievedExamples = [];
@@ -26,7 +51,7 @@ async function sendToBackend(redactedImage, goal, domStructure = [], customRetri
       }
     }
 
-    const response = await fetch(`${BACKEND_URL}/act`, {
+    const response = await fetch(`${backendUrl}/act`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -55,10 +80,10 @@ async function sendToBackend(redactedImage, goal, domStructure = [], customRetri
 
   } catch (error) {
     console.error('[sendToBackend] Network error:', error.message);
-    throw new Error(`Failed to reach Betaal backend server at ${BACKEND_URL}: ${error.message}`);
+    throw new Error(`Failed to reach Betaal backend server at ${backendUrl}: ${error.message}`);
   }
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { sendToBackend, BACKEND_URL };
+  module.exports = { sendToBackend, getBackendUrl, DEFAULT_BACKEND_URL };
 }

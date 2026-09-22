@@ -646,6 +646,20 @@
       </div>
     </div>
 
+    <!-- Backend Server URL Settings (Prompt 90) -->
+    <div style="background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+      <h3 style="font-size: 0.85rem; color: #38bdf8; margin-bottom: 6px;">🌐 Backend VLM Server Endpoint</h3>
+      <p style="font-size: 0.72rem; color: #94a3b8; margin: 0 0 8px 0;">Specify a custom Express backend deployment URL (e.g., Render/Railway) or use local default.</p>
+      <div style="display: flex; gap: 6px; margin-bottom: 6px;">
+        <input id="backend-url-input" type="text" placeholder="http://localhost:3000" style="flex: 1; padding: 6px; background-color: #0f172a; color: #f8fafc; border: 1px solid #334155; border-radius: 4px; font-size: 0.78rem;">
+        <button id="save-backend-url-btn" style="padding: 6px 12px; background-color: #0284c7; color: white; border: none; border-radius: 4px; font-size: 0.78rem; cursor: pointer; width: auto;">Save Endpoint</button>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span id="backend-url-status" style="font-size: 0.72rem; color: #4ade80; display: none;"></span>
+        <button id="reset-backend-url-btn" style="background: transparent; color: #64748b; border: none; font-size: 0.7rem; cursor: pointer; padding: 0; text-decoration: underline;">Reset to Default</button>
+      </div>
+    </div>
+
     <!-- Model Cache Maintenance (Prompt 72) -->
     <div style="background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px;">
       <h3 style="font-size: 0.85rem; color: #38bdf8; margin-bottom: 6px;">🧠 Model Session Cache</h3>
