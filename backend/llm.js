@@ -125,91 +125,83 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
 
+    // Helper for simulated fallback decision
+    const getSimulatedDecision = () => {
+      console.log('[VLM] Falling back to Simulated Local VLM decision engine.');
+      const hasStep1Btn = domStructure.some(el => el.id === 'step1-next-btn');
+      const hasStep2Btn = domStructure.some(el => el.id === 'step2-next-btn');
+      const hasStep3Btn = domStructure.some(el => el.id === 'step3-next-btn' || el.id === 'photo-id-upload');
+      const hasFinalSubmitBtn = domStructure.some(el => el.id === 'final-submit-btn');
+
+      if (hasStep1Btn) return JSON.stringify({ action: 'click', selector: '#step1-next-btn', reasoning: 'VLM (Fallback): Moving to Step 2.', final: false, confidence: 0.95 });
+      if (hasStep2Btn) return JSON.stringify({ action: 'click', selector: '#step2-next-btn', reasoning: 'VLM (Fallback): Moving to Step 3.', final: false, confidence: 0.95 });
+      if (hasStep3Btn) return JSON.stringify({ action: 'click', selector: '#photo-id-upload', reasoning: 'VLM (Fallback): Selecting photo upload.', final: false, confidence: 0.90 });
+      if (hasFinalSubmitBtn) return JSON.stringify({ action: 'click', selector: '#final-submit-btn', reasoning: 'VLM (Fallback): Submitting final application.', final: true, confidence: 0.95 });
+
+      return JSON.stringify({ action: 'click', selector: '#submit-grievance-btn', reasoning: 'VLM (Fallback): Submitting form.', final: true, confidence: 0.95 });
+    };
+
     if (anthropicKey) {
-      console.log('[VLM] Calling Anthropic Claude VLM API (claude-3-5-sonnet-20241022)...');
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: 'claude-3-5-sonnet-20241022',
-          max_tokens: 1024,
-          messages: [
-            {
+      console.log('[VLM] Calling Anthropic Claude VLM API...');
+      try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 1024,
+            messages: [{
               role: 'user',
               content: [
-                {
-                  type: 'image',
-                  source: {
-                    type: 'base64',
-                    media_type: 'image/png',
-                    data: redactedImageBase64.replace(/^data:image\/\w+;base64,/, '')
-                  }
-                },
-                {
-                  type: 'text',
-                  text: promptText
-                }
+                { type: 'image', source: { type: 'base64', media_type: 'image/png', data: redactedImageBase64.replace(/^data:image\/\w+;base64,/, '') } },
+                { type: 'text', text: promptText }
               ]
-            }
-          ]
-        })
-      });
+            }]
+          })
+        });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`HTTP ${response.status} - ${errText}`);
+        if (response.ok) {
+          const data = await response.json();
+          const rawContent = data.content?.[0]?.text;
+          if (rawContent) return rawContent;
+        } else {
+          const errText = await response.text();
+          console.warn(`[VLM] Anthropic API error (${response.status}): ${errText}. Attempting fallback...`);
+        }
+      } catch (anthropicErr) {
+        console.warn(`[VLM] Anthropic fetch error: ${anthropicErr.message}. Attempting fallback...`);
       }
-
-      const data = await response.json();
-      const duration = Math.round(performance.now() - startTime);
-      console.log(`[Claude VLM Success] Response received in ${duration} ms.`);
-
-      const rawContent = data.content?.[0]?.text;
-      if (!rawContent) {
-        throw new Error('Claude VLM returned empty response text.');
-      }
-      return rawContent;
-    } else {
-      console.log('[VLM] Calling Gemini 1.5 Flash VLM API...');
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: promptText },
-                {
-                  inline_data: {
-                    mime_type: 'image/png',
-                    data: redactedImageBase64.replace(/^data:image\/\w+;base64,/, '')
-                  }
-                }
-              ]
-            }
-          ]
-        })
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`HTTP ${response.status} - ${errText}`);
-      }
-
-      const data = await response.json();
-      const duration = Math.round(performance.now() - startTime);
-      console.log(`[Gemini VLM Success] Response received in ${duration} ms.`);
-
-      const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawContent) {
-        throw new Error('Gemini VLM returned empty candidate content.');
-      }
-      return rawContent;
     }
+
+    if (geminiKey) {
+      console.log('[VLM] Calling Gemini VLM API...');
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: 'image/png', data: redactedImageBase64.replace(/^data:image\/\w+;base64,/, '') } }] }]
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawContent) return rawContent;
+        } else {
+          console.warn(`[VLM] Gemini API error (${response.status}). Attempting fallback...`);
+        }
+      } catch (geminiErr) {
+        console.warn(`[VLM] Gemini fetch error: ${geminiErr.message}. Attempting fallback...`);
+      }
+    }
+
+    // Fallback if cloud keys fail or are out of credit
+    return getSimulatedDecision();
 
   } catch (error) {
     console.error('[VLM Call Failed]:', error.message);

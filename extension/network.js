@@ -51,27 +51,60 @@ async function sendToBackend(redactedImage, goal, domStructure = [], customRetri
       }
     }
 
-    const response = await fetch(`${backendUrl}/act`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        goal,
-        redactedImage,
-        domStructure,
-        retrievedExamples: Array.isArray(retrievedExamples) ? retrievedExamples : []
-      })
-    });
+    let targetUrl = backendUrl;
+    let response = null;
+
+    try {
+      response = await fetch(`${targetUrl}/act`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          goal,
+          redactedImage,
+          domStructure,
+          retrievedExamples: Array.isArray(retrievedExamples) ? retrievedExamples : []
+        })
+      });
+    } catch (primaryErr) {
+      // Primary server network error (e.g. Render server asleep or down)
+      if (targetUrl !== DEFAULT_BACKEND_URL) {
+        console.warn(`[sendToBackend] Primary backend (${targetUrl}) failed (${primaryErr.message}). Attempting fallback to ${DEFAULT_BACKEND_URL}...`);
+        targetUrl = DEFAULT_BACKEND_URL;
+        response = await fetch(`${targetUrl}/act`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            goal,
+            redactedImage,
+            domStructure,
+            retrievedExamples: Array.isArray(retrievedExamples) ? retrievedExamples : []
+          })
+        });
+      } else {
+        throw primaryErr;
+      }
+    }
 
     if (!response.ok) {
       let errorMsg = `Server error HTTP ${response.status}`;
       try {
         const errJson = await response.json();
         if (errJson.error) errorMsg = errJson.error;
-      } catch (e) {
-        // Fallback to generic message
+      } catch (e) {}
+
+      // If configured cloud server returned HTTP error (e.g. 400 credit error), fallback to localhost if distinct
+      if (targetUrl !== DEFAULT_BACKEND_URL) {
+        console.warn(`[sendToBackend] Primary backend (${targetUrl}) returned error: ${errorMsg}. Attempting fallback to ${DEFAULT_BACKEND_URL}...`);
+        try {
+          const fallbackRes = await fetch(`${DEFAULT_BACKEND_URL}/act`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ goal, redactedImage, domStructure, retrievedExamples })
+          });
+          if (fallbackRes.ok) return await fallbackRes.json();
+        } catch (_) {}
       }
+
       throw new Error(errorMsg);
     }
 
