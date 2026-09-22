@@ -16,7 +16,7 @@ The Express backend (`backend/server.js`) is fully prepared for zero-configurati
 
 ### Live Deployed Backend URL
 ```text
-https://betaal-backend.onrender.com
+https://betaal-backend-p8vk.onrender.com
 ```
 
 ### Steps to Deploy on Render / Railway
