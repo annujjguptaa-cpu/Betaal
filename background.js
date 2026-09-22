@@ -815,8 +815,26 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
 
   } catch (err) {
     console.error('[Background Loop Error]:', err);
-    updateLoopStatus('error', 'Error');
+    updateLoopStatus('error', err.message || 'Error');
     addLoopLog(`❌ Execution Stopped: ${err.message}`);
+
+    // Update or add error feed card so exact error text is visible in Activity Feed
+    addFeedItem({
+      id: 'step_' + (agentLoopState.iterationCount || 1),
+      stepIndex: agentLoopState.iterationCount || 1,
+      maxIterations: agentLoopState.maxIterations,
+      status: 'stopped',
+      action: 'error',
+      selector: null,
+      title: `❌ Loop Stopped: ${err.message}`,
+      subtitle: `Error details: ${err.message}`,
+      reasoning: `The loop encountered an unrecoverable error and stopped to prevent bad actions.`,
+      detectionCounts: agentLoopState.lastPipelineResult?.counts || {},
+      timing: agentLoopState.lastPipelineResult?.timing || null,
+      originalImage: agentLoopState.lastPipelineResult?.originalImage || null,
+      redactedImage: agentLoopState.lastPipelineResult?.redactedImage || null,
+      timestamp: new Date().toISOString()
+    });
 
     // If content script was unresponsive or error requires human assistance
     showInterventionNotification(`Error in agent loop: ${err.message}`);
