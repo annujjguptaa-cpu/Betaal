@@ -1,7 +1,57 @@
-let selectedPerformanceMode = 'balanced';
+/* popup.js */
 
-// Segmented Control Event Handler
+let selectedPerformanceMode = 'balanced';
+let pendingInterventions = [];
+let pausedLoopState = null;
+
+// DOM Elements
+let runBtn, compareBtn, goalInput, goalError, statusList, debugPanel, liveTimerEl, stateBadge, redactionToggle;
+
+function updateBadgeState(state, text) {
+  if (!stateBadge) stateBadge = document.getElementById('state-badge');
+  if (!stateBadge) return;
+
+  stateBadge.className = 'badge ' + state;
+  stateBadge.textContent = text || (state.charAt(0).toUpperCase() + state.slice(1));
+}
+
+// =========================================================================
+// POPUP INITIALIZATION & REACTIVE STATE REHYDRATION (Prompt 71)
+// =========================================================================
+
 document.addEventListener('DOMContentLoaded', async () => {
+  runBtn = document.getElementById('run-agent-btn');
+  compareBtn = document.getElementById('compare-modes-btn');
+  goalInput = document.getElementById('goal-input');
+  goalError = document.getElementById('goal-error');
+  statusList = document.getElementById('status-list');
+  debugPanel = document.getElementById('debug-panel');
+  liveTimerEl = document.getElementById('live-timer');
+  stateBadge = document.getElementById('state-badge');
+  redactionToggle = document.getElementById('redaction-toggle');
+
+  // Redaction toggle change listener
+  if (redactionToggle) {
+    const toggleStatusText = document.getElementById('toggle-status-text');
+    const toggleWarning = document.getElementById('toggle-warning-msg');
+    redactionToggle.addEventListener('change', () => {
+      if (redactionToggle.checked) {
+        if (toggleStatusText) {
+          toggleStatusText.textContent = 'Redaction: ON';
+          toggleStatusText.className = 'toggle-label on';
+        }
+        if (toggleWarning) toggleWarning.style.display = 'none';
+      } else {
+        if (toggleStatusText) {
+          toggleStatusText.textContent = 'Redaction: OFF';
+          toggleStatusText.className = 'toggle-label off';
+        }
+        if (toggleWarning) toggleWarning.style.display = 'block';
+      }
+    });
+  }
+
+  // Segmented Control Event Handler
   const segmentedBtns = document.querySelectorAll('.segmented-btn');
   const policy = await getPolicy();
   selectedPerformanceMode = policy.performanceMode || 'balanced';
@@ -27,15 +77,326 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  const compareBtn = document.getElementById('compare-modes-btn');
   if (compareBtn) {
     compareBtn.addEventListener('click', runModeComparison);
   }
+
+  // Bind Main Run Agent Button
+  if (runBtn) {
+    runBtn.addEventListener('click', () => {
+      triggerAgentLoop();
+    });
+  }
+
+  // Model Cache Clear Button (Prompt 72)
+  const clearCacheBtn = document.getElementById('clear-cache-btn');
+  const cacheStatusMsg = document.getElementById('cache-status-msg');
+  if (clearCacheBtn) {
+    clearCacheBtn.addEventListener('click', () => {
+      clearAllModelCaches();
+      if (cacheStatusMsg) {
+        cacheStatusMsg.textContent = '✅ All model session caches successfully cleared!';
+        cacheStatusMsg.style.display = 'block';
+        setTimeout(() => { cacheStatusMsg.style.display = 'none'; }, 3000);
+      }
+    });
+  }
+
+  // Tab Switching Handler
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetTabId = btn.getAttribute('data-tab');
+      tabBtns.forEach((b) => b.classList.remove('active'));
+      tabContents.forEach((c) => c.classList.remove('active'));
+
+      btn.classList.add('active');
+      const targetContent = document.getElementById(targetTabId);
+      if (targetContent) targetContent.classList.add('active');
+
+      if (targetTabId === 'vault-tab') renderVaultTab();
+      if (targetTabId === 'notifications-tab') renderNotificationsTab();
+      if (targetTabId === 'policy-tab') renderPolicyTab();
+    });
+  });
+
+  // Fetch initial background loop state upon opening popup (Prompt 71)
+  await syncWithBackgroundLoopState();
+
+  renderVaultTab();
+  renderNotificationsTab();
+  renderPolicyTab();
 });
 
-// Run Mode Comparison Handler (Runs same screenshot through Fast, Balanced, Accurate sequentially)
+// =========================================================================
+// REACTIVE LISTENER FOR BACKGROUND LOOP EVENTS (Prompts 70, 71)
+// =========================================================================
+
+browser.runtime.onMessage.addListener(async (message) => {
+  if (message.type === 'LOOP_STATE_UPDATE') {
+    applyLoopStateToUI(message.state);
+  }
+});
+
+async function syncWithBackgroundLoopState() {
+  try {
+    const res = await browser.runtime.sendMessage({ type: 'GET_LOOP_STATE' });
+    if (res && res.success && res.state) {
+      applyLoopStateToUI(res.state);
+    }
+  } catch (err) {
+    console.warn('[Popup] Failed to sync background loop state:', err);
+  }
+}
+
+function applyLoopStateToUI(state) {
+  if (!state) return;
+
+  // Sync goal if present
+  if (goalInput && state.goal && !goalInput.value) {
+    goalInput.value = state.goal;
+  }
+
+  // Sync state badge
+  if (state.isLocked) {
+    updateBadgeState('running', 'Running Loop...');
+    if (runBtn) {
+      runBtn.disabled = true;
+      runBtn.textContent = 'Agent Busy...';
+    }
+  } else if (state.status === 'paused') {
+    updateBadgeState('error', 'Paused for Approval');
+    if (runBtn) {
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run Agent';
+    }
+  } else if (state.status === 'error') {
+    updateBadgeState('error', 'Error');
+    if (runBtn) {
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run Agent';
+    }
+  } else {
+    updateBadgeState('ready', state.statusText || 'Ready');
+    if (runBtn) {
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run Agent';
+    }
+  }
+
+  // Sync Logs
+  if (statusList && Array.isArray(state.logs)) {
+    statusList.innerHTML = state.logs.map(log => `<div>${log}</div>`).join('');
+    statusList.scrollTop = statusList.scrollHeight;
+  }
+
+  // Sync Pending Interventions
+  if (Array.isArray(state.pendingInterventions)) {
+    pendingInterventions = state.pendingInterventions;
+    renderNotificationsTab();
+  }
+
+  // Sync DOM stability timing display if present (Prompt 68)
+  if (liveTimerEl && state.domStabilityMs) {
+    liveTimerEl.style.display = 'block';
+    liveTimerEl.innerHTML = `⏱️ <b>DOM Stability Latency:</b> ${state.domStabilityMs}ms | Loop Iterations: ${state.iterationCount || 0}`;
+  }
+}
+
+// =========================================================================
+// RUN AGENT TRIGGER (Prompts 68-71)
+// =========================================================================
+
+async function triggerAgentLoop(resumeAction = null) {
+  const goal = goalInput ? goalInput.value.trim() : '';
+
+  if (!goal) {
+    if (goalError) goalError.style.display = 'block';
+    return;
+  } else {
+    if (goalError) goalError.style.display = 'none';
+  }
+
+  const isRedactionEnabled = redactionToggle ? redactionToggle.checked : true;
+
+  if (runBtn) {
+    runBtn.disabled = true;
+    runBtn.textContent = 'Agent Busy...';
+  }
+  updateBadgeState('running', 'Starting Loop...');
+  if (debugPanel) debugPanel.innerHTML = '';
+  if (statusList) statusList.innerHTML = '<div>⏳ Launching background agent loop...</div>';
+
+  try {
+    // Check if pipeline pre-run is needed for active tab preview
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    const currentTabUrl = tabs && tabs[0] ? (tabs[0].url || 'Unknown') : 'global';
+    
+    // Capture and execute local privacy pipeline in popup so live visual thumbnails & timing are generated
+    const cap = await browser.runtime.sendMessage({ type: 'CAPTURE_SCREEN' });
+    if (cap && cap.success) {
+      let domStructure = [];
+      try {
+        const dRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
+        domStructure = (dRes && dRes.success) ? dRes.domStructure : [];
+      } catch (e) {}
+
+      const pipelineRes = await processScreenshot(cap.dataUrl, domStructure, currentTabUrl);
+
+      // Render side-by-side thumbnails & detection table
+      renderPipelineArtifacts(pipelineRes);
+
+      // Forward pipeline result to background
+      await browser.runtime.sendMessage({
+        type: 'STEP_PIPELINE_DONE',
+        pipelineRes
+      });
+    }
+
+    // Send START_LOOP to background script (Prompt 70 & 71)
+    const startRes = await browser.runtime.sendMessage({
+      type: 'START_LOOP',
+      goal,
+      redactionEnabled: isRedactionEnabled,
+      resumeAction
+    });
+
+    if (startRes && !startRes.success) {
+      if (startRes.isLocked) {
+        updateBadgeState('busy', 'Agent Busy');
+        if (statusList) statusList.innerHTML += '<div style="color:#f59e0b;">⚠️ Agent is currently busy executing another iteration. Request queued/ignored.</div>';
+      } else {
+        throw new Error(startRes.error || 'Failed to start agent loop in background.');
+      }
+    }
+  } catch (err) {
+    console.error('[TriggerAgentLoop Error]:', err);
+    updateBadgeState('error', 'Error');
+    if (statusList) statusList.innerHTML += `<div style="color:#ef4444;">❌ Error: ${err.message}</div>`;
+    if (runBtn) {
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run Agent';
+    }
+  }
+}
+
+function renderPipelineArtifacts(pipelineRes) {
+  if (!debugPanel || !pipelineRes) return;
+
+  // Render timing breakdown telemetry (Prompt 68 + 72)
+  if (liveTimerEl) {
+    liveTimerEl.style.display = 'block';
+    liveTimerEl.innerHTML = `⏱️ <b>Timing Breakdown (${(pipelineRes.performanceMode || 'balanced').toUpperCase()} Mode):</b><br>` +
+      `Classify: ${pipelineRes.timing.classification}ms | ` +
+      `PII Detection: ${pipelineRes.timing.piiDetection}ms | Face Detection: ${pipelineRes.timing.faceDetection}ms | ` +
+      `Redaction: ${pipelineRes.timing.redaction}ms<br>` +
+      `📊 <b>Policy Tally:</b> ${pipelineRes.counts.detected} detected, ${pipelineRes.counts.redacted} redacted, ${pipelineRes.counts.skipped} skipped`;
+  }
+
+  // Render side-by-side thumbnails
+  let thumbRow = debugPanel.querySelector('.thumbnails-row');
+  if (!thumbRow) {
+    thumbRow = document.createElement('div');
+    thumbRow.className = 'thumbnails-row';
+    debugPanel.insertBefore(thumbRow, debugPanel.firstChild);
+  }
+  thumbRow.innerHTML = `
+    <div class="thumb-card">
+      <span>Original Screen (Click to Zoom)</span>
+      <img id="thumb-orig" src="${pipelineRes.originalImage}" alt="Original Screenshot" />
+    </div>
+    <div class="thumb-card">
+      <span>Redacted Screen (Click to Zoom)</span>
+      <img id="thumb-redacted" src="${pipelineRes.redactedImage}" alt="Redacted Screenshot" />
+    </div>
+  `;
+
+  // Wire Modal Zoom
+  const modal = document.getElementById('image-modal');
+  const modalImg = document.getElementById('modal-img');
+  const closeModalBtn = document.getElementById('close-modal-btn');
+  const openZoom = (src) => {
+    if (modalImg && modal) {
+      modalImg.src = src;
+      modal.style.display = 'flex';
+    }
+  };
+  const thumbOrigEl = document.getElementById('thumb-orig');
+  const thumbRedEl = document.getElementById('thumb-redacted');
+  if (thumbOrigEl) thumbOrigEl.addEventListener('click', () => openZoom(pipelineRes.originalImage));
+  if (thumbRedEl) thumbRedEl.addEventListener('click', () => openZoom(pipelineRes.redactedImage));
+  if (closeModalBtn) closeModalBtn.addEventListener('click', () => { modal.style.display = 'none'; });
+  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+
+  // Render Redacted PII Audit Table
+  let tableContainer = debugPanel.querySelector('.detection-table-container');
+  if (!tableContainer) {
+    tableContainer = document.createElement('div');
+    tableContainer.className = 'detection-table-container';
+    debugPanel.appendChild(tableContainer);
+  }
+
+  const tableHeader = `
+    <table class="detection-table">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Detected Text (Safe)</th>
+          <th>Redaction Method</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  let tableRows = '';
+  const formatSafeType = (type) => {
+    switch (type) {
+      case 'aadhaar': return 'Aadhaar Number';
+      case 'phone': return 'Phone Number';
+      case 'address': return 'Address Text';
+      case 'pan': return 'PAN Card Number';
+      case 'email': return 'Email Address';
+      case 'possible-id-number': return 'Possible ID Number';
+      case 'face': return 'User Face Region';
+      default: return 'Sensitive Region';
+    }
+  };
+
+  pipelineRes.detectedRegions.forEach((region) => {
+    const safeLabel = formatSafeType(region.type);
+    const safeText = region.type === 'face' ? '[Face Detection Box]' : `${safeLabel} [HIDDEN]`;
+    const methodLabel = region.method === 'blur' ? 'Irreversible Pixelation' : 'Solid Blackfill';
+    const isEnabled = region.enabled !== false;
+    const statusHtml = isEnabled
+      ? `<span class="status-tag">REDACTED</span>`
+      : `<span style="font-weight:600; color:#f87171;">SKIPPED BY POLICY</span>`;
+
+    tableRows += `
+      <tr>
+        <td><b>${safeLabel}</b></td>
+        <td>${safeText}</td>
+        <td>${methodLabel}</td>
+        <td>${statusHtml}</td>
+      </tr>
+    `;
+  });
+
+  if (pipelineRes.detectedRegions.length === 0) {
+    tableRows = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">No sensitive PII or faces detected.</td></tr>`;
+  }
+
+  tableContainer.innerHTML = tableHeader + tableRows + `</tbody></table>`;
+}
+
+// =========================================================================
+// RUN MODE COMPARISON (Prompt 72 session timing comparison)
+// =========================================================================
+
 async function runModeComparison() {
-  const compareBtn = document.getElementById('compare-modes-btn');
+  if (!compareBtn) return;
   const container = document.getElementById('mode-comparison-container');
   if (!container) return;
 
@@ -58,7 +419,6 @@ async function runModeComparison() {
       domStructure = (domRes && domRes.success) ? domRes.domStructure : [];
     } catch (e) {}
 
-    // Save active mode to restore after comparison
     const originalMode = selectedPerformanceMode;
 
     // Run Fast Mode
@@ -67,7 +427,7 @@ async function runModeComparison() {
     await savePolicy(policyFast);
     const fastRes = await processScreenshot(captureRes.dataUrl, domStructure, currentTabUrl);
 
-    // Run Balanced Mode
+    // Run Balanced Mode (benefits from session caching across all model types - Prompt 72)
     const policyBal = await getPolicy();
     policyBal.performanceMode = 'balanced';
     await savePolicy(policyBal);
@@ -90,11 +450,9 @@ async function runModeComparison() {
       { name: 'Accurate Mode', mode: 'accurate', data: accRes }
     ];
 
-    // Determine fastest mode latency and max detections
     const minLatency = Math.min(...modesData.map(m => m.data.timing.total));
     const maxDetections = Math.max(...modesData.map(m => m.data.counts.detected));
 
-    // Render 3-Column Comparison View
     container.innerHTML = `
       <div style="background:#1e293b; border:1px solid #38bdf8; border-radius:6px; padding:10px;">
         <h3 style="font-size:0.85rem; color:#38bdf8; margin-bottom:8px; text-align:center;">⚡ Live Performance Mode Comparison</h3>
@@ -128,363 +486,10 @@ async function runModeComparison() {
   }
 }
 
-// Main Agent Loop Execution
-document.getElementById('run-agent-btn').addEventListener('click', async () => {
-  startAgentLoop();
-});
+// =========================================================================
+// VAULT TAB RENDERING
+// =========================================================================
 
-async function startAgentLoop(resumeAction = null) {
-  const runBtn = document.getElementById('run-agent-btn');
-  const debugPanel = document.getElementById('debug-panel');
-  const statusList = document.getElementById('status-list');
-
-  const goalInput = document.getElementById('goal-input');
-  const goalError = document.getElementById('goal-error');
-  const goal = goalInput ? goalInput.value.trim() : '';
-
-  if (!goal) {
-    if (goalError) goalError.style.display = 'block';
-    return;
-  } else {
-    if (goalError) goalError.style.display = 'none';
-  }
-
-  const isRedactionEnabled = redactionToggle.checked;
-
-  runBtn.disabled = true;
-  updateBadgeState('running', 'Running Loop...');
-  debugPanel.innerHTML = '';
-  statusList.innerHTML = '';
-
-  const addStatus = (msg) => {
-    const p = document.createElement('div');
-    p.textContent = msg;
-    statusList.appendChild(p);
-  };
-
-  const MAX_ITERATIONS = 15;
-  let iterationCount = 0;
-  let consecutiveFailures = 0;
-  let lastSelector = null;
-  const actionsTaken = [];
-  let finalOutcome = 'completed';
-  let totalPiiCount = 0;
-  let totalFaceCount = 0;
-  let currentTabUrl = 'Unknown Site';
-
-  startTime = performance.now();
-
-  try {
-    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-    if (tabs && tabs[0]) currentTabUrl = tabs[0].url || 'Unknown Site';
-
-    // If resuming approved intervention action
-    if (resumeAction) {
-      addStatus(`▶️ Resuming approved action: [${resumeAction.action}] on "${resumeAction.selector}"`);
-      const execRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'EXECUTE_ACTION', action: resumeAction });
-      if (!execRes || !execRes.success) {
-        throw new Error(execRes ? execRes.error : 'Execution failed upon resumption.');
-      }
-      actionsTaken.push(`[Approved & Executed] ${resumeAction.action} on ${resumeAction.selector}`);
-    }
-
-    while (iterationCount < MAX_ITERATIONS) {
-      iterationCount++;
-      addStatus(`\n🔄 --- Agent Loop Iteration ${iterationCount}/${MAX_ITERATIONS} ---`);
-
-      // Stage 1: Capture Screen
-      addStatus('⏳ Capturing tab screenshot...');
-      const captureRes = await browser.runtime.sendMessage({ type: 'CAPTURE_SCREEN' });
-
-      if (!captureRes || !captureRes.success) {
-        const errMsg = captureRes ? captureRes.error : 'Failed to capture tab screenshot.';
-        if (errMsg.includes('security reasons') || errMsg.includes('cannot be captured')) {
-          throw new Error('🔒 Restricted Page: This page type (e.g., settings, internal extension, or webstore) cannot be captured for security reasons.');
-        }
-        throw new Error(errMsg);
-      }
-
-      // Stage 2: Extract DOM Structure
-      addStatus('⏳ Fetching page DOM structure...');
-      let domStructure = [];
-      try {
-        const domRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
-        domStructure = (domRes && domRes.success) ? domRes.domStructure : [];
-      } catch (connErr) {
-        addStatus('⚠️ Content script not ready on page. Attempting auto-injection...');
-        try {
-          await browser.scripting.executeScript({
-            target: { tabId: tabs[0].id },
-            files: ['extension/browser-polyfill.js', 'extension/action-executor.js', 'content.js']
-          });
-          const retryDomRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
-          domStructure = (retryDomRes && retryDomRes.success) ? retryDomRes.domStructure : [];
-        } catch (injectErr) {
-          throw new Error('Please refresh the webpage tab once to connect Betaal to this page.');
-        }
-      }
-
-      // Stage 3: Process Privacy Pipeline (Dual OCR + DOM Field Inspection + Effective Policy)
-      addStatus('⏳ Running local vision redaction pipeline...');
-      const pipelineRes = await processScreenshot(captureRes.dataUrl, domStructure, currentTabUrl);
-      totalPiiCount = Math.max(totalPiiCount, pipelineRes.counts.piiFields);
-      totalFaceCount = Math.max(totalFaceCount, pipelineRes.counts.faces);
-      const payloadImage = isRedactionEnabled ? pipelineRes.redactedImage : pipelineRes.originalImage;
-
-      // Render Live Timing & Policy Counts Breakdown Telemetry
-      const tEl = document.getElementById('live-timer');
-      if (tEl) {
-        tEl.innerHTML = `⏱️ <b>Timing Breakdown (${(pipelineRes.performanceMode || 'balanced').toUpperCase()} Mode):</b><br>` +
-          `Classify: ${pipelineRes.timing.classification}ms | ` +
-          `PII Detection: ${pipelineRes.timing.piiDetection}ms | Face Detection: ${pipelineRes.timing.faceDetection}ms | ` +
-          `Redaction: ${pipelineRes.timing.redaction}ms<br>` +
-          `📊 <b>Policy Tally:</b> ${pipelineRes.counts.detected} detected, ${pipelineRes.counts.redacted} redacted, ${pipelineRes.counts.skipped} skipped by policy`;
-      }
-
-      // Render Side-by-Side Thumbnails (Original vs Redacted View)
-      let thumbRow = debugPanel.querySelector('.thumbnails-row');
-      if (!thumbRow) {
-        thumbRow = document.createElement('div');
-        thumbRow.className = 'thumbnails-row';
-        debugPanel.insertBefore(thumbRow, debugPanel.firstChild);
-      }
-      thumbRow.innerHTML = `
-        <div class="thumb-card">
-          <span>Original Screen (Click to Zoom)</span>
-          <img id="thumb-orig" src="${pipelineRes.originalImage}" alt="Original Screenshot" />
-        </div>
-        <div class="thumb-card">
-          <span>Redacted Screen (Click to Zoom)</span>
-          <img id="thumb-redacted" src="${pipelineRes.redactedImage}" alt="Redacted Screenshot" />
-        </div>
-      `;
-
-      // Wire Click-to-Zoom Modal
-      const modal = document.getElementById('image-modal');
-      const modalImg = document.getElementById('modal-img');
-      const closeModalBtn = document.getElementById('close-modal-btn');
-      const openZoom = (src) => {
-        if (modalImg && modal) {
-          modalImg.src = src;
-          modal.style.display = 'flex';
-        }
-      };
-      const thumbOrigEl = document.getElementById('thumb-orig');
-      const thumbRedEl = document.getElementById('thumb-redacted');
-      if (thumbOrigEl) thumbOrigEl.addEventListener('click', () => openZoom(pipelineRes.originalImage));
-      if (thumbRedEl) thumbRedEl.addEventListener('click', () => openZoom(pipelineRes.redactedImage));
-      if (closeModalBtn) closeModalBtn.addEventListener('click', () => { modal.style.display = 'none'; });
-      if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-
-      // Render Redacted PII Audit Table
-      let tableContainer = debugPanel.querySelector('.detection-table-container');
-      if (!tableContainer) {
-        tableContainer = document.createElement('div');
-        tableContainer.className = 'detection-table-container';
-        debugPanel.appendChild(tableContainer);
-      }
-
-      const tableHeader = `
-        <table class="detection-table">
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th>Detected Text (Safe)</th>
-              <th>Redaction Method</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-      `;
-
-      let tableRows = '';
-      const formatSafeType = (type) => {
-        switch (type) {
-          case 'aadhaar': return 'Aadhaar Number';
-          case 'phone': return 'Phone Number';
-          case 'address': return 'Address Text';
-          case 'pan': return 'PAN Card Number';
-          case 'email': return 'Email Address';
-          case 'possible-id-number': return 'Possible ID Number';
-          case 'face': return 'User Face Region';
-          default: return 'Sensitive Region';
-        }
-      };
-
-      pipelineRes.detectedRegions.forEach((region) => {
-        const safeLabel = formatSafeType(region.type);
-        const safeText = region.type === 'face' ? '[Face Detection Box]' : `${safeLabel} [HIDDEN]`;
-        const methodLabel = region.method === 'blur' ? 'Irreversible Pixelation' : 'Solid Blackfill';
-        const isEnabled = region.enabled !== false;
-        const statusHtml = isEnabled
-          ? `<span class="status-tag">REDACTED</span>`
-          : `<span style="font-weight:600; color:#f87171;">SKIPPED BY POLICY</span>`;
-
-        tableRows += `
-          <tr>
-            <td><b>${safeLabel}</b></td>
-            <td>${safeText}</td>
-            <td>${methodLabel}</td>
-            <td>${statusHtml}</td>
-          </tr>
-        `;
-      });
-
-      if (pipelineRes.detectedRegions.length === 0) {
-        tableRows = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">No sensitive PII or faces detected.</td></tr>`;
-      }
-
-      tableContainer.innerHTML = tableHeader + tableRows + `</tbody></table>`;
-
-      // Stage 4: Call Backend VLM
-      addStatus('⏳ Querying Backend VLM server...');
-      let actionResponse = await sendToBackend(payloadImage, goal, domStructure);
-
-      // Check Human Intervention Rules
-      const interventionCheck = needsHumanIntervention(actionResponse, {
-        consecutiveFailures,
-        actionHistory: actionsTaken,
-        domStructure
-      });
-
-      if (interventionCheck.needed) {
-        addStatus(`⚠️ Intervention Triggered: ${interventionCheck.reason}`);
-        updateBadgeState('error', 'Paused for Approval');
-
-        // Notify Background & Add Pending Notification
-        await browser.runtime.sendMessage({
-          type: 'SHOW_INTERVENTION_NOTIFICATION',
-          reason: interventionCheck.reason
-        });
-
-        pendingInterventions.unshift({
-          id: 'notif_' + Date.now(),
-          reason: interventionCheck.reason,
-          siteUrl: currentTabUrl,
-          action: actionResponse,
-          status: 'pending'
-        });
-
-        pausedLoopState = { action: actionResponse, goal };
-        renderNotificationsTab();
-        finalOutcome = 'paused';
-
-        // Log to Vault as paused
-        await saveToVault({
-          timestamp: new Date().toISOString(),
-          siteUrl: currentTabUrl,
-          piiCount: totalPiiCount,
-          faceCount: totalFaceCount,
-          detectedCount: pipelineRes.counts.detected,
-          redactedCount: pipelineRes.counts.redacted,
-          skippedCount: pipelineRes.counts.skipped,
-          performanceMode: pipelineRes.performanceMode,
-          policySnapshot: pipelineRes.policySnapshot,
-          actionsTaken,
-          outcome: 'paused'
-        });
-        renderVaultTab();
-
-        return; // Pause execution loop for user intervention
-      }
-
-      // Stage 5: Execute Action with Selector Fallback & Retry (Up to 2 Retries)
-      let retryAttempts = 0;
-      let actionExecuted = false;
-
-      while (retryAttempts <= 2 && !actionExecuted) {
-        addStatus(`⏳ Executing action [${actionResponse.action}] on selector "${actionResponse.selector}"...`);
-        const execRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'EXECUTE_ACTION', action: actionResponse });
-
-        if (execRes && execRes.success) {
-          actionExecuted = true;
-          consecutiveFailures = 0;
-          lastSelector = actionResponse.selector;
-          actionsTaken.push(`${actionResponse.action} on ${actionResponse.selector}`);
-          addStatus(`✅ Action successfully executed.`);
-        } else if (execRes && execRes.selectorNotFound && retryAttempts < 2) {
-          retryAttempts++;
-          consecutiveFailures++;
-          addStatus(`⚠️ Selector "${actionResponse.selector}" not found. Re-prompting VLM backend (Retry ${retryAttempts}/2)...`);
-          
-          const correctionGoal = `${goal}\n\nThe selector [${actionResponse.selector}] does not exist on this page. Here is the exact list of available elements:\n${JSON.stringify(domStructure)}\nChoose a selector ONLY from this list.`;
-          actionResponse = await sendToBackend(payloadImage, correctionGoal, domStructure);
-        } else {
-          // Exceeded retries or unhandled execution failure
-          throw new Error("I couldn't find the right element on this page, please complete this step manually.");
-        }
-      }
-
-      // Check if action was marked final by VLM
-      if (actionResponse.final) {
-        addStatus('🎉 Task marked as complete by VLM!');
-        break;
-      }
-    }
-
-    if (iterationCount >= MAX_ITERATIONS) {
-      addStatus(`⚠️ Safety Cap Reached: Maximum of ${MAX_ITERATIONS} iterations reached.`);
-      finalOutcome = 'stopped';
-    }
-
-    updateBadgeState('ready', 'Completed');
-    addStatus('🎉 Agent loop finished successfully.');
-
-    // Save final entry to Vault
-    await saveToVault({
-      timestamp: new Date().toISOString(),
-      siteUrl: currentTabUrl,
-      piiCount: totalPiiCount,
-      faceCount: totalFaceCount,
-      detectedCount: pipelineRes ? pipelineRes.counts.detected : totalPiiCount + totalFaceCount,
-      redactedCount: pipelineRes ? pipelineRes.counts.redacted : totalPiiCount + totalFaceCount,
-      skippedCount: pipelineRes ? pipelineRes.counts.skipped : 0,
-      performanceMode: pipelineRes ? pipelineRes.performanceMode : 'balanced',
-      policySnapshot: pipelineRes ? pipelineRes.policySnapshot : {},
-      actionsTaken,
-      outcome: finalOutcome
-    });
-    renderVaultTab();
-
-  } catch (err) {
-    console.error('[Agent Loop Error]:', err);
-    updateBadgeState('error', 'Error');
-    const errDiv = document.createElement('div');
-    errDiv.id = 'error-message';
-    errDiv.textContent = `❌ Execution Stopped: ${err.message}`;
-    debugPanel.appendChild(errDiv);
-  } finally {
-    runBtn.disabled = false;
-  }
-}
-
-// Tab Switching Handler
-document.addEventListener('DOMContentLoaded', async () => {
-  const tabBtns = document.querySelectorAll('.tab-btn');
-  const tabContents = document.querySelectorAll('.tab-content');
-
-  tabBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const targetTabId = btn.getAttribute('data-tab');
-      tabBtns.forEach((b) => b.classList.remove('active'));
-      tabContents.forEach((c) => c.classList.remove('active'));
-
-      btn.classList.add('active');
-      const targetContent = document.getElementById(targetTabId);
-      if (targetContent) targetContent.classList.add('active');
-
-      if (targetTabId === 'vault-tab') renderVaultTab();
-      if (targetTabId === 'notifications-tab') renderNotificationsTab();
-      if (targetTabId === 'policy-tab') renderPolicyTab();
-    });
-  });
-
-  renderVaultTab();
-  renderNotificationsTab();
-  renderPolicyTab();
-});
-
-// Vault Tab Rendering with Policy Snapshot Expander
 async function renderVaultTab() {
   const vaultListContainer = document.getElementById('vault-list');
   if (!vaultListContainer) return;
@@ -498,11 +503,10 @@ async function renderVaultTab() {
 
   vaultListContainer.innerHTML = entries.map((entry) => {
     const timeStr = new Date(entry.timestamp).toLocaleString();
-    const actionsSummary = entry.actionsTaken.length > 0 ? entry.actionsTaken.join(' ➔ ') : 'No actions';
+    const actionsSummary = (entry.actionsTaken && entry.actionsTaken.length > 0) ? entry.actionsTaken.join(' ➔ ') : 'No actions';
     const badgeColor = entry.outcome === 'completed' ? '#4ade80' : (entry.outcome === 'paused' ? '#38bdf8' : '#f87171');
     const perfMode = (entry.performanceMode || 'balanced').toUpperCase();
 
-    // Render snapshot rules summary safely (no raw PII)
     const snapshotRules = entry.policySnapshot || {};
     const rulesList = Object.entries(snapshotRules).map(([rule, cfg]) => {
       const state = cfg.enabled ? `<span style="color:#4ade80;">ON (${cfg.method || 'blackfill'})</span>` : `<span style="color:#f87171;">OFF (Skipped)</span>`;
@@ -522,7 +526,6 @@ async function renderVaultTab() {
           Actions: ${actionsSummary}
         </div>
         
-        <!-- Expandable Policy Used Section -->
         <details style="font-size: 0.7rem; color: #94a3b8; background: #0f172a; padding: 4px 8px; border-radius: 4px; border: 1px solid #334155;">
           <summary style="cursor: pointer; font-weight: bold; color: #38bdf8;">📜 Policy Used Snapshot</summary>
           <div style="margin-top: 4px; line-height: 1.4; word-break: break-word;">
@@ -534,7 +537,10 @@ async function renderVaultTab() {
   }).join('');
 }
 
-// Notifications Tab Rendering
+// =========================================================================
+// NOTIFICATIONS TAB RENDERING (Prompt 71 - Background Linked)
+// =========================================================================
+
 function renderNotificationsTab() {
   const pendingContainer = document.getElementById('pending-notifications-list');
   const resolvedContainer = document.getElementById('resolved-notifications-list');
@@ -543,7 +549,6 @@ function renderNotificationsTab() {
   const pendingItems = pendingInterventions.filter((item) => item.status === 'pending');
   const resolvedItems = pendingInterventions.filter((item) => item.status !== 'pending');
 
-  // Update badge count in background
   browser.runtime.sendMessage({ type: 'UPDATE_BADGE_COUNT', count: pendingItems.length }).catch(() => {});
 
   if (pendingItems.length === 0) {
@@ -561,7 +566,6 @@ function renderNotificationsTab() {
       </div>
     `).join('');
 
-    // Attach event listeners safely without relying on inline onclick (CSP safe)
     pendingContainer.querySelectorAll('.approve-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         const id = e.target.getAttribute('data-id');
@@ -617,20 +621,12 @@ window.approveIntervention = async function (id) {
   const item = pendingInterventions.find((i) => i.id === id);
   if (item) {
     item.status = 'approved';
+    browser.runtime.sendMessage({ type: 'APPROVE_INTERVENTION', id }).catch(() => {});
     
-    // Clear badge count since pending is resolved
-    browser.runtime.sendMessage({ type: 'UPDATE_BADGE_COUNT', count: 0 }).catch(() => {});
-    
-    // Switch UI back to Live View tab so status is visible
     const liveViewBtn = document.querySelector('[data-tab="live-view-tab"]');
     if (liveViewBtn) liveViewBtn.click();
     
     renderNotificationsTab();
-    
-    const targetAction = item.action || (pausedLoopState ? pausedLoopState.action : null);
-    if (targetAction) {
-      startAgentLoop(targetAction);
-    }
   }
 };
 
@@ -638,28 +634,16 @@ window.stopIntervention = async function (id) {
   const item = pendingInterventions.find((i) => i.id === id);
   if (item) {
     item.status = 'stopped';
-
-    // Clear badge count
-    browser.runtime.sendMessage({ type: 'UPDATE_BADGE_COUNT', count: 0 }).catch(() => {});
+    browser.runtime.sendMessage({ type: 'STOP_INTERVENTION', id }).catch(() => {});
     renderNotificationsTab();
-
-    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-    const currentTabUrl = tabs && tabs[0] ? tabs[0].url : 'Unknown Site';
-
-    await saveToVault({
-      timestamp: new Date().toISOString(),
-      siteUrl: currentTabUrl,
-      piiCount: 0,
-      faceCount: 0,
-      actionsTaken: ['Stopped by user intervention'],
-      outcome: 'stopped'
-    });
-    renderVaultTab();
     updateBadgeState('ready', 'Stopped');
   }
 };
 
-// Policy Tab Settings UI Wiring
+// =========================================================================
+// POLICY TAB SETTINGS UI WIRING
+// =========================================================================
+
 async function renderPolicyTab() {
   const rulesTbody = document.getElementById('policy-rules-tbody');
   const chipsContainer = document.getElementById('override-chips-container');
@@ -669,7 +653,6 @@ async function renderPolicyTab() {
 
   if (!rulesTbody) return;
 
-  // Active Site Banner
   const tabs = await browser.tabs.query({ active: true, currentWindow: true });
   const currentTabUrl = tabs && tabs[0] ? tabs[0].url : 'global';
   const effectivePolicy = await getEffectivePolicy(currentTabUrl);
@@ -679,7 +662,6 @@ async function renderPolicyTab() {
     overrideBadgeEl.style.display = effectivePolicy.hasOverride ? 'inline-block' : 'none';
   }
 
-  // Load Policy Configuration
   const policy = await getPolicy();
   if (perfSelect) perfSelect.value = policy.performanceMode || 'balanced';
 
@@ -693,7 +675,6 @@ async function renderPolicyTab() {
     faces: 'User Face Biometrics'
   };
 
-  // Render Rules Table
   rulesTbody.innerHTML = Object.keys(categoryLabels).map((key) => {
     const rule = policy.rules[key] || { enabled: true, method: key === 'faces' ? 'blur' : 'blackfill' };
     const label = categoryLabels[key];
@@ -716,7 +697,6 @@ async function renderPolicyTab() {
     `;
   }).join('');
 
-  // Render Site Override Chips
   const overrides = policy.siteOverrides || {};
   const overrideKeys = Object.keys(overrides);
 

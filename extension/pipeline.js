@@ -228,7 +228,25 @@ async function processScreenshot(imageDataUrl, domStructure = [], currentSiteUrl
   };
 }
 
+/**
+ * Clears all model session caches across ViT and Face detection models (Prompt 72).
+ */
+function clearAllModelCaches() {
+  if (typeof clearViTCache === 'function') {
+    clearViTCache();
+  } else if (typeof require !== 'undefined') {
+    try { require('./detection/vit-classifier').clearViTCache(); } catch (e) {}
+  }
+
+  if (typeof clearFaceModelCache === 'function') {
+    clearFaceModelCache();
+  } else if (typeof require !== 'undefined') {
+    try { require('./detection/face-detect').clearFaceModelCache(); } catch (e) {}
+  }
+  console.log('[Pipeline] Cleared all model session caches.');
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { processScreenshot };
+  module.exports = { processScreenshot, clearAllModelCaches };
 }
 

@@ -35,6 +35,7 @@
     }
     .badge.ready { color: #4ade80; border-color: #22c55e; }
     .badge.running { color: #38bdf8; border-color: #0284c7; }
+    .badge.busy { color: #f59e0b; border-color: #d97706; }
     .badge.error { color: #f87171; border-color: #ef4444; }
 
     p.subtitle {
@@ -354,6 +355,7 @@
 
     <div id="mode-comparison-container" style="display: none; margin-bottom: 12px;"></div>
 
+    <div id="live-timer" class="timer-badge" style="display: none;"></div>
     <div id="status-list"></div>
     <div id="debug-panel"></div>
   </div>
@@ -410,7 +412,7 @@
     </div>
 
     <!-- Site Overrides Section -->
-    <div style="background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px;">
+    <div style="background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
       <h3 style="font-size: 0.85rem; color: #38bdf8; margin-bottom: 8px;">Site-Specific Overrides</h3>
       <div style="display: flex; gap: 6px; margin-bottom: 10px;">
         <input id="override-hostname-input" type="text" placeholder="e.g. localhost or example.com" style="flex: 1; padding: 6px; background-color: #0f172a; color: #f8fafc; border: 1px solid #334155; border-radius: 4px; font-size: 0.78rem;">
@@ -419,6 +421,14 @@
       <div id="override-chips-container" style="display: flex; flex-wrap: wrap; gap: 6px;">
         <!-- Dynamically populated chips -->
       </div>
+    </div>
+
+    <!-- Model Cache Maintenance (Prompt 72) -->
+    <div style="background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px;">
+      <h3 style="font-size: 0.85rem; color: #38bdf8; margin-bottom: 6px;">🧠 Model Session Cache</h3>
+      <p style="font-size: 0.72rem; color: #94a3b8; margin: 0 0 8px 0;">Betaal reuses loaded ONNX model sessions across runs to minimize latency. Clear the cache if you want to force models to reload fresh.</p>
+      <button id="clear-cache-btn" style="width: 100%; padding: 6px; background-color: #475569; color: #f8fafc; border: 1px solid #64748b; border-radius: 4px; font-size: 0.78rem; cursor: pointer;">🧹 Clear Model Sessions Cache</button>
+      <div id="cache-status-msg" style="font-size: 0.72rem; color: #4ade80; margin-top: 4px; display: none; text-align: center;"></div>
     </div>
   </div>
 

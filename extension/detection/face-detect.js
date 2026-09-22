@@ -3,12 +3,26 @@
 const modelCache = {};
 
 /**
+ * Clears the Face Detection model session cache.
+ */
+function clearFaceModelCache() {
+  const keys = Object.keys(modelCache);
+  keys.forEach((key) => {
+    delete modelCache[key];
+  });
+  console.log('[Face Detection] Cleared session cache.');
+}
+
+/**
  * Loads ONNX Runtime Web session for Face Detection model with WebGPU and WASM fallback.
  * @param {string} modelPath 
- * @returns {Promise<{session: ort.InferenceSession|null, provider: string, loadTimeMs: number}>}
+ * @returns {Promise<{session: ort.InferenceSession|null, provider: string, loadTimeMs: number, fromCache: boolean}>}
  */
 async function loadFaceModel(modelPath = './models/face_detector.onnx') {
-  if (modelCache[modelPath]) return modelCache[modelPath];
+  if (modelCache[modelPath]) {
+    console.log(`[loadFaceModel] Reusing cached face detector session for "${modelPath}"`);
+    return { ...modelCache[modelPath], fromCache: true };
+  }
 
   const startTime = performance.now();
   let ortInstance = typeof ort !== 'undefined' ? ort : null;
@@ -172,5 +186,5 @@ async function detectFaces(imageDataUrl, upscaleFactor = 1, modelPath = './model
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { loadFaceModel, detectFaces, applyNMS };
+  module.exports = { loadFaceModel, detectFaces, applyNMS, clearFaceModelCache, modelCache };
 }

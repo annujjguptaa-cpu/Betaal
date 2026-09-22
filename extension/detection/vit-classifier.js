@@ -1,15 +1,32 @@
 /* extension/detection/vit-classifier.js */
 
-let vitSessionInstance = null;
+// Module-level InferenceSession cache keyed by model file path (Prompt 72)
+const vitSessionCache = {};
+
+/**
+ * Clears the ViT model session cache.
+ */
+function clearViTCache() {
+  const keys = Object.keys(vitSessionCache);
+  keys.forEach((key) => {
+    delete vitSessionCache[key];
+  });
+  console.log('[ViT Classifier] Cleared session cache.');
+}
 
 /**
  * Loads ONNX Runtime Web session for ViT model with WebGPU and WASM fallback.
+ * Checks vitSessionCache before calling ort.InferenceSession.create().
  * @param {string} modelPath 
- * @returns {Promise<{session: ort.InferenceSession, provider: string}>}
+ * @returns {Promise<{session: ort.InferenceSession|null, provider: string, loadTimeMs: number, fromCache: boolean}>}
  */
 async function loadViTModel(modelPath = './models/vit-tiny.onnx') {
-  if (vitSessionInstance) return vitSessionInstance;
+  if (vitSessionCache[modelPath]) {
+    console.log(`[loadViTModel] Reusing cached ViT session for "${modelPath}"`);
+    return { ...vitSessionCache[modelPath], fromCache: true };
+  }
 
+  const startTime = performance.now();
   let ortInstance = typeof ort !== 'undefined' ? ort : null;
 
   if (!ortInstance) {
@@ -46,9 +63,10 @@ async function loadViTModel(modelPath = './models/vit-tiny.onnx') {
     }
   }
 
-  console.log(`ViT Model session successfully loaded using execution provider: ${usedProvider}`);
-  vitSessionInstance = { session, provider: usedProvider };
-  return vitSessionInstance;
+  const loadTimeMs = Math.round(performance.now() - startTime);
+  console.log(`ViT Model session successfully loaded using execution provider: ${usedProvider} in ${loadTimeMs}ms`);
+  vitSessionCache[modelPath] = { session, provider: usedProvider, loadTimeMs, fromCache: false };
+  return vitSessionCache[modelPath];
 }
 
 /**
@@ -123,5 +141,5 @@ async function classifyScreenType(imageDataUrl, optionalContext = {}) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { loadViTModel, classifyScreenType };
+  module.exports = { loadViTModel, classifyScreenType, clearViTCache, vitSessionCache };
 }

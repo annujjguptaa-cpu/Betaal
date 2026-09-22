@@ -102,9 +102,94 @@ function getDOMStructure() {
   });
 }
 
+/**
+ * Prompt 68: Waits for DOM stability before re-capturing.
+ * Uses MutationObserver on document.body, resets a quiet timer on mutations,
+ * and resolves when quiet timer completes OR timeoutMs is reached.
+ * @param {number} timeoutMs - Maximum total time to wait (default 2000ms)
+ * @param {number} quietMs - Quiet window without mutations (default 300ms)
+ * @returns {Promise<{stable: boolean, waitedMs: number, timedOut: boolean}>}
+ */
+function waitForDomStable(timeoutMs = 2000, quietMs = 300) {
+  return new Promise((resolve) => {
+    const startTime = performance.now();
+    let quietTimer = null;
+    let timeoutTimer = null;
+    let observer = null;
+    let finished = false;
+
+    const cleanup = () => {
+      finished = true;
+      if (observer) {
+        try { observer.disconnect(); } catch (e) {}
+      }
+      if (quietTimer) clearTimeout(quietTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+    };
+
+    const done = (timedOut) => {
+      if (finished) return;
+      cleanup();
+      const waitedMs = Math.round(performance.now() - startTime);
+      resolve({
+        stable: !timedOut,
+        waitedMs,
+        timedOut
+      });
+    };
+
+    // If body isn't available yet
+    const targetNode = document.body || document.documentElement;
+    if (!targetNode) {
+      return resolve({ stable: true, waitedMs: 0, timedOut: false });
+    }
+
+    // Initialize MutationObserver
+    try {
+      observer = new MutationObserver(() => {
+        if (finished) return;
+        // Reset quiet timer whenever mutations occur
+        if (quietTimer) clearTimeout(quietTimer);
+        quietTimer = setTimeout(() => done(false), quietMs);
+      });
+
+      observer.observe(targetNode, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true
+      });
+    } catch (obsErr) {
+      console.warn('[Betaal waitForDomStable] MutationObserver error, continuing:', obsErr);
+      return resolve({ stable: true, waitedMs: 0, timedOut: false });
+    }
+
+    // Initial quiet timer (resolves if no initial mutations occur)
+    quietTimer = setTimeout(() => done(false), quietMs);
+
+    // Hard timeout fallback
+    timeoutTimer = setTimeout(() => done(true), timeoutMs);
+  });
+}
+
 // Listen for messages from background/popup
-browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
+const browserApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null);
+if (browserApi && browserApi.runtime && browserApi.runtime.onMessage) {
+  browserApi.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   try {
+    // Prompt 69: PING/PONG liveness check
+    if (message.type === 'PING') {
+      return { success: true, pong: true };
+    }
+
+    // Prompt 68: Wait for DOM stability
+    if (message.type === 'WAIT_FOR_DOM_STABLE') {
+      const timeoutMs = typeof message.timeoutMs === 'number' ? message.timeoutMs : 2000;
+      const quietMs = typeof message.quietMs === 'number' ? message.quietMs : 300;
+      const stabilityResult = await waitForDomStable(timeoutMs, quietMs);
+      return { success: true, ...stabilityResult };
+    }
+
     if (message.type === 'GET_DOM_STRUCTURE') {
       return { success: true, domStructure: getDOMStructure() };
     }
@@ -121,4 +206,9 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
     console.error('[ContentScript Message Error]:', err);
     return { success: false, error: err.message };
   }
-});
+  });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { getDOMStructure, waitForDomStable };
+}
