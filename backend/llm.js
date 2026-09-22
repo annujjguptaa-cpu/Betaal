@@ -55,10 +55,11 @@ function parseVLMResponse(rawText) {
  * @param {string} redactedImageBase64 
  * @param {string} goal 
  * @param {Array<Object>} domStructure 
+ * @param {Array<Object>} [retrievedExamples=[]]
  * @returns {Promise<string>} Raw model response text
  */
-async function callVLM(redactedImageBase64, goal, domStructure = []) {
-  const promptText = buildPrompt(goal, domStructure);
+async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedExamples = []) {
+  const promptText = buildPrompt(goal, domStructure, retrievedExamples);
   const startTime = performance.now();
 
   const apiKey = process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY;

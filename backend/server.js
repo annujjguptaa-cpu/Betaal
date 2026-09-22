@@ -35,7 +35,7 @@ app.get('/health', (req, res) => {
 // POST /act
 app.post('/act', async (req, res) => {
   const timestamp = new Date().toISOString();
-  const { goal, redactedImage, domStructure } = req.body;
+  const { goal, redactedImage, domStructure, retrievedExamples } = req.body;
 
   if (!goal || !redactedImage) {
     return res.status(400).json({
@@ -45,13 +45,14 @@ app.post('/act', async (req, res) => {
 
   const imageSizeKb = Math.round((redactedImage.length * 0.75) / 1024);
   const domCount = Array.isArray(domStructure) ? domStructure.length : 0;
+  const ragCount = Array.isArray(retrievedExamples) ? retrievedExamples.length : 0;
 
-  console.log(`[${timestamp}] Received request. Goal: [${goal}]. Image size: [${imageSizeKb}] KB. DOM fields: [${domCount}]. No raw PII expected in this payload.`);
+  console.log(`[${timestamp}] Received request. Goal: [${goal}]. Image size: [${imageSizeKb}] KB. DOM fields: [${domCount}]. RAG examples: [${ragCount}]. No raw PII expected in this payload.`);
   console.log(`[${timestamp}] [1/4] Payload received, no raw PII fields detected in structure`);
 
   try {
     console.log(`[${new Date().toISOString()}] [2/4] Sending sanitized context to VLM`);
-    const rawVLMResponse = await callVLM(redactedImage, goal, domStructure);
+    const rawVLMResponse = await callVLM(redactedImage, goal, domStructure, retrievedExamples);
 
     console.log(`[${new Date().toISOString()}] [3/4] VLM response received and validated`);
     const parsedAction = parseVLMResponse(rawVLMResponse);

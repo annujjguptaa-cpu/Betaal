@@ -1,4 +1,5 @@
 importScripts('extension/browser-polyfill.js');
+importScripts('extension/rag-retrieval.js');
 
 console.log('Betaal background loaded');
 
@@ -803,11 +804,12 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
     updateLoopStatus('ready', finalOutcome === 'completed' ? 'Completed' : 'Stopped');
     addLoopLog('🎉 Agent loop finished successfully.');
 
-    // Save final entry to Vault
+    // Save final entry to Vault (Prompt 85/86: with domStructure for signature calculation)
     await appendVaultEntry({
       timestamp: new Date().toISOString(),
       siteUrl: agentLoopState.activeTabUrl,
       actionsTaken: agentLoopState.actionsTaken,
+      domStructure: typeof domStructure !== 'undefined' ? domStructure : [],
       outcome: finalOutcome
     });
 
@@ -1030,6 +1032,8 @@ async function appendVaultEntry(entry) {
       siteUrl: entry.siteUrl || 'Unknown Site',
       actionsTaken: entry.actionsTaken || [],
       outcome: entry.outcome || 'completed',
+      // Prompt 85/86: Store structural metadata signature for RAG retrieval
+      structuralSignature: entry.structuralSignature || (typeof computeStructuralSignature === 'function' && entry.domStructure ? computeStructuralSignature(entry.domStructure) : null),
       // Prompt 81: Flag user-corrected steps distinctly in the vault
       ...(entry.correctedByUser ? {
         correctedByUser: true,

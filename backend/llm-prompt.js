@@ -1,19 +1,18 @@
-/* backend/llm-prompt.js — Prompt 83
+/* backend/llm-prompt.js — Prompts 83 & 88
  *
  * Builds the VLM instruction prompt.
- * Prompt 83 addition: When the DOM structure contains fields marked as sensitive
- * (via their `sensitive` flag from PII detection), the VLM is instructed to return
- * {valueSource: '<profileKey>'} instead of a literal value — so real identity data
- * is never sent over the network.
+ * Prompt 83: valueSource schema for sensitive fields.
+ * Prompt 88: Incorporates RAG retrievedExamples precedent section if non-empty.
  */
 
 /**
  * Builds the vision-language model instruction prompt.
  * @param {string} goal 
  * @param {Array<Object>} domStructure 
+ * @param {Array<Object>} [retrievedExamples=[]] - Prompt 88: Array of RAG precedents from Vault
  * @returns {string} Formatted VLM prompt text
  */
-function buildPrompt(goal, domStructure = []) {
+function buildPrompt(goal, domStructure = [], retrievedExamples = []) {
   const domListFormatted = Array.isArray(domStructure)
     ? domStructure.map((item, idx) => {
         const sensitiveTag = item.sensitive ? ' [SENSITIVE]' : '';
@@ -21,17 +20,34 @@ function buildPrompt(goal, domStructure = []) {
       }).join('\n')
     : 'No structural field data provided.';
 
-  // Prompt 83: The known local-profile keys the executor can resolve locally.
+  // Known local-profile keys for Prompt 83 valueSource rules
   const profileKeys = [
     'fullName', 'email', 'phone', 'aadhaar', 'pan',
     'passport', 'address', 'pinCode', 'dateOfBirth', 'bankAccount'
   ].join(' | ');
 
+  // Prompt 88: Format retrieved structural examples if non-empty
+  let ragPrecedentSection = '';
+  if (Array.isArray(retrievedExamples) && retrievedExamples.length > 0) {
+    const formattedExamples = retrievedExamples.map((ex, idx) => {
+      const typesStr = (ex.fieldTypes || []).join(', ') || 'general';
+      const btnsStr = (ex.buttonLabels || []).join(', ') || 'none';
+      const actionsStr = (ex.actionsTaken || []).join(' -> ') || 'completed form';
+      return `Example ${idx + 1}: Field Types: [${typesStr}] | Buttons: [${btnsStr}] | Successful Actions: ${actionsStr}`;
+    }).join('\n');
+
+    ragPrecedentSection = `
+For reference, here are structurally similar pages this agent has successfully handled before:
+${formattedExamples}
+Use these as helpful precedent, but base your decision on the ACTUAL current page structure provided above, not on assumption.
+`;
+  }
+
   return `You are looking at a screenshot where sensitive information has been redacted — solid black rectangles indicate hidden personal data (numbers, IDs, addresses), and pixelated/blocky regions indicate hidden faces. Do not attempt to guess what's underneath. Given the user's goal and this redacted view plus the following structural field data:
 ${domListFormatted}
 
 User Goal: "${goal}"
-
+${ragPrecedentSection}
 Determine the single next UI action needed to accomplish or progress toward the goal.
 
 IMPORTANT — VALUE SOURCING RULES:
