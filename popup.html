@@ -384,6 +384,52 @@
       to   { transform: rotate(360deg); }
     }
 
+    /* Prompt 81: User-correction input on paused cards */
+    .feed-correction-row {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed rgba(148, 163, 184, 0.2);
+    }
+    .feed-correction-label {
+      font-size: 0.7rem;
+      color: #64748b;
+      margin-bottom: 5px;
+    }
+    .feed-correction-input-row {
+      display: flex;
+      gap: 6px;
+    }
+    .feed-correction-input {
+      flex: 1;
+      padding: 5px 8px;
+      background: #0f172a;
+      border: 1px solid #475569;
+      border-radius: 4px;
+      color: #f8fafc;
+      font-size: 0.75rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .feed-correction-input:focus { border-color: #38bdf8; }
+    .feed-correction-submit {
+      padding: 5px 10px;
+      background: #7c3aed;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.15s;
+      width: auto;
+    }
+    .feed-correction-submit:hover { opacity: 0.85; }
+    .feed-card.user-corrected {
+      border-left: 4px solid #7c3aed;
+      background: rgba(124, 58, 237, 0.06);
+    }
+
     .tab-bar {
       display: flex;
       border-bottom: 1px solid #334155;

@@ -281,6 +281,30 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
       return { success: true };
     }
 
+    // Prompt 81: User sends a correction instruction on a paused step
+    if (message.type === 'USER_CORRECTION') {
+      const { interventionId, correctionText } = message;
+
+      // Mark the intervention record
+      const item = agentLoopState.pendingInterventions.find((i) => i.id === interventionId);
+      if (item) item.status = 'user-corrected';
+      setPendingBadgeCount(0);
+
+      // Mark the paused feed card as user-corrected
+      const pausedCard = agentLoopState.activityFeed.find(
+        f => f.interventionId === interventionId || f.status === 'paused'
+      );
+      if (pausedCard) {
+        pausedCard.status = 'user-corrected';
+        pausedCard.subtitle = `User redirected: "${correctionText}"`;
+        broadcastFeedUpdate(pausedCard);
+      }
+
+      // Run the user-corrected action asynchronously (don't block response)
+      runUserCorrectedAction(interventionId, correctionText);
+      return { success: true };
+    }
+
     // Prompt 71: Update pipeline result from popup runner
     if (message.type === 'STEP_PIPELINE_DONE') {
       agentLoopState.lastPipelineResult = message.pipelineRes;
@@ -789,6 +813,158 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
   }
 }
 
+// =========================================================================
+// PROMPT 81: USER-CORRECTED ACTION RUNNER
+// =========================================================================
+
+async function runUserCorrectedAction(interventionId, correctionText) {
+  if (agentLoopState.isLocked) {
+    console.warn('[UserCorrection] Loop locked — correction deferred.');
+    return;
+  }
+  agentLoopState.isLocked = true;
+  updateLoopStatus('running', 'Processing your correction…');
+
+  try {
+    // Grab the active tab
+    const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (!activeTab) throw new Error('No active tab found for user correction.');
+
+    // Fetch current DOM
+    let domStructure = [];
+    try {
+      const domRes = await browser.tabs.sendMessage(activeTab.id, { type: 'GET_DOM_STRUCTURE' });
+      domStructure = (domRes && domRes.success) ? domRes.domStructure : [];
+    } catch (_) {}
+
+    // Capture a fresh screenshot for context
+    let payloadImage = null;
+    try {
+      const dataUrl = await browser.tabs.captureVisibleTab(activeTab.windowId, { format: 'jpeg', quality: 80 });
+      payloadImage = (agentLoopState.lastPipelineResult?.redactedImage && agentLoopState.redactionEnabled)
+        ? agentLoopState.lastPipelineResult.redactedImage
+        : dataUrl;
+    } catch (_) {}
+
+    // Build a correction-augmented goal string for the VLM
+    const correctedGoal =
+      `Original goal: ${agentLoopState.goal}\n\n` +
+      `USER CORRECTION — Do NOT repeat the previous plan. Instead, follow this specific instruction now:\n` +
+      `"${correctionText}"\n\n` +
+      `Available DOM elements:\n${JSON.stringify(domStructure)}`;
+
+    addLoopLog(`✏️ User correction received: "${correctionText}". Re-querying VLM…`);
+
+    // Add an in-progress feed card for the correction step
+    const correctionStepIndex = agentLoopState.iterationCount + 1;
+    const correctionCardId = 'correction_' + Date.now();
+    addFeedItem({
+      id: correctionCardId,
+      stepIndex: correctionStepIndex,
+      maxIterations: agentLoopState.maxIterations,
+      status: 'running',
+      action: 'correction',
+      selector: null,
+      title: `✏️ User correction: "${correctionText}"`,
+      subtitle: 'Querying VLM with your instruction…',
+      reasoning: `User overrode the autonomous plan and instructed: "${correctionText}"`,
+      detectionCounts: agentLoopState.lastPipelineResult?.counts || {},
+      timing: null,
+      originalImage: payloadImage,
+      redactedImage: payloadImage,
+      correctedByUser: true,
+      timestamp: new Date().toISOString()
+    });
+
+    // Re-prompt the VLM with the correction
+    const vlmRes = await fetch(`${BACKEND_URL}/act`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        goal: correctedGoal,
+        redactedImage: payloadImage,
+        domStructure
+      })
+    });
+
+    if (!vlmRes.ok) {
+      let errDetails = `HTTP ${vlmRes.status}`;
+      try { const e = await vlmRes.json(); if (e.error) errDetails = e.error; } catch (_) {}
+      throw new Error(`VLM error during correction: ${errDetails}`);
+    }
+
+    const actionResponse = await vlmRes.json();
+    addLoopLog(`✅ Correction VLM response: [${actionResponse.action}] on "${actionResponse.selector}"`);
+
+    // Execute the corrected action
+    let execRes = null;
+    try {
+      execRes = await browser.tabs.sendMessage(activeTab.id, {
+        type: 'EXECUTE_ACTION',
+        action: actionResponse
+      });
+    } catch (_) {
+      execRes = { success: true }; // Navigation may have been triggered
+    }
+
+    if (!execRes || !execRes.success) {
+      throw new Error(`Corrected action execution failed on selector "${actionResponse.selector}"`);
+    }
+
+    agentLoopState.iterationCount = correctionStepIndex;
+    agentLoopState.actionsTaken.push(`[user-corrected] ${actionResponse.action} on ${actionResponse.selector}`);
+
+    let correctionActionLabel = `Executed [${actionResponse.action}]`;
+    if (actionResponse.action === 'click') correctionActionLabel = `Clicked "${actionResponse.selector}"`;
+    else if (actionResponse.action === 'type') correctionActionLabel = `Typed into "${actionResponse.selector}"`;
+    else if (actionResponse.action === 'scroll') correctionActionLabel = `Scrolled "${actionResponse.selector}"`;
+
+    // Update the running card → user-corrected + completed
+    addFeedItem({
+      id: correctionCardId,
+      stepIndex: correctionStepIndex,
+      maxIterations: agentLoopState.maxIterations,
+      status: 'user-corrected',
+      action: actionResponse.action,
+      selector: actionResponse.selector,
+      title: `✏️ ${correctionActionLabel} (user-directed)`,
+      subtitle: `Based on your instruction: "${correctionText}"`,
+      reasoning: actionResponse.reasoning || `User-directed correction executed successfully.`,
+      detectionCounts: agentLoopState.lastPipelineResult?.counts || {},
+      timing: agentLoopState.lastPipelineResult?.timing || null,
+      originalImage: payloadImage,
+      redactedImage: payloadImage,
+      correctedByUser: true,
+      correctionText,
+      timestamp: new Date().toISOString()
+    });
+
+    addLoopLog(`✅ User correction executed. Resuming autonomous loop…`);
+
+    // Save a distinct vault entry for the corrected step
+    await appendVaultEntry({
+      timestamp: new Date().toISOString(),
+      siteUrl: agentLoopState.activeTabUrl,
+      actionsTaken: agentLoopState.actionsTaken,
+      outcome: 'user-corrected',
+      correctionText,
+      correctedByUser: true
+    });
+
+    updateLoopStatus('ready', 'Correction applied — ready for next step');
+
+    // After executing the correction, continue the autonomous loop from the next iteration
+    runBackgroundAgentLoop(agentLoopState.goal, agentLoopState.redactionEnabled, null);
+
+  } catch (err) {
+    console.error('[UserCorrection] Error:', err);
+    addLoopLog(`❌ Correction failed: ${err.message}`);
+    updateLoopStatus('error', 'Correction failed');
+    agentLoopState.isLocked = false;
+    broadcastLoopState();
+  }
+}
+
 // In-worker intervention check helper
 function checkIntervention(action, context = {}) {
   if (!action) return { needed: false, reason: null };
@@ -840,7 +1016,12 @@ async function appendVaultEntry(entry) {
       timestamp: entry.timestamp || new Date().toISOString(),
       siteUrl: entry.siteUrl || 'Unknown Site',
       actionsTaken: entry.actionsTaken || [],
-      outcome: entry.outcome || 'completed'
+      outcome: entry.outcome || 'completed',
+      // Prompt 81: Flag user-corrected steps distinctly in the vault
+      ...(entry.correctedByUser ? {
+        correctedByUser: true,
+        correctionText: entry.correctionText || null
+      } : {})
     };
     currentVault.unshift(vaultEntry);
     await browser.storage.local.set({ vault: currentVault });

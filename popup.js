@@ -319,12 +319,13 @@ async function triggerAgentLoop(resumeAction = null) {
 
 function getFeedIcon(status) {
   switch (status) {
-    case 'completed': return '✅';
-    case 'running':   return '<span style="display:inline-block;animation:spin 1s linear infinite;">⏳</span>';
-    case 'paused':    return '🔔';
-    case 'approved':  return '▶️';
-    case 'stopped':   return '🛑';
-    default:          return '🔹';
+    case 'completed':      return '✅';
+    case 'running':        return '<span style="display:inline-block;animation:spin 1s linear infinite;">⏳</span>';
+    case 'paused':         return '🔔';
+    case 'approved':       return '▶️';
+    case 'stopped':        return '🛑';
+    case 'user-corrected': return '✏️';
+    default:               return '🔹';
   }
 }
 
@@ -346,7 +347,7 @@ function buildFeedCardHTML(item) {
     ? `PII: ${timing.piiDetection}ms · Face: ${timing.faceDetection}ms · Redact: ${timing.redaction}ms`
     : '';
 
-  // Inline action buttons (Prompt 80) — only for paused steps
+  // Inline action buttons (Prompts 80 & 81) — only for paused steps
   const inlineActions = item.status === 'paused' && item.interventionId ? `
     <div class="feed-inline-actions">
       <div style="font-size:0.72rem;color:#f59e0b;margin-bottom:6px;width:100%;">
@@ -354,6 +355,18 @@ function buildFeedCardHTML(item) {
       </div>
       <button class="feed-inline-btn feed-approve-btn" data-id="${item.interventionId}">✅ Approve &amp; Continue</button>
       <button class="feed-inline-btn feed-stop-btn" data-id="${item.interventionId}">🛑 Stop Here</button>
+    </div>
+    <div class="feed-correction-row">
+      <div class="feed-correction-label">✏️ Or tell it what to do instead:</div>
+      <div class="feed-correction-input-row">
+        <input
+          type="text"
+          class="feed-correction-input"
+          data-intervention-id="${item.interventionId}"
+          placeholder="e.g. Click the Sign In button instead..."
+        />
+        <button class="feed-correction-submit" data-intervention-id="${item.interventionId}">Send</button>
+      </div>
     </div>` : '';
 
   // Expandable Details (Prompt 79) — thumbnails + timing inside <details>
@@ -417,6 +430,54 @@ function renderActivityFeed(feedItems) {
       e.stopPropagation();
       const id = btn.getAttribute('data-id');
       window.stopIntervention(id);
+    });
+  });
+
+  // Prompt 81: Wire correction input submit (button click + Enter key)
+  const submitCorrection = (interventionId, inputEl) => {
+    const text = inputEl.value.trim();
+    if (!text) {
+      inputEl.focus();
+      inputEl.style.borderColor = '#ef4444';
+      setTimeout(() => { inputEl.style.borderColor = ''; }, 1200);
+      return;
+    }
+    // Disable to prevent double-submit
+    inputEl.disabled = true;
+    const submitBtn = inputEl.parentElement.querySelector('.feed-correction-submit');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '⏳';
+    }
+    // Replace the whole correction row with a "sent" confirmation
+    const correctionRow = inputEl.closest('.feed-correction-row');
+    if (correctionRow) {
+      correctionRow.innerHTML = `<div style="font-size:0.72rem;color:#a78bfa;padding:4px 0;">✏️ Correction sent: "<em>${text.replace(/</g,'&lt;')}</em>"</div>`;
+    }
+    // Also collapse the approve/stop buttons so the card reads clearly
+    const inlineActions = inputEl.closest('.feed-card')?.querySelector('.feed-inline-actions');
+    if (inlineActions) {
+      inlineActions.innerHTML = `<div style="font-size:0.72rem;color:#a78bfa;padding:2px 0;">Redirecting agent with your instruction…</div>`;
+    }
+    window.sendUserCorrection(interventionId, text);
+  };
+
+  container.querySelectorAll('.feed-correction-submit').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-intervention-id');
+      const input = btn.parentElement.querySelector('.feed-correction-input');
+      if (input) submitCorrection(id, input);
+    });
+  });
+
+  container.querySelectorAll('.feed-correction-input').forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const id = input.getAttribute('data-intervention-id');
+        submitCorrection(id, input);
+      }
     });
   });
 
@@ -680,7 +741,14 @@ async function renderVaultTab() {
   vaultListContainer.innerHTML = entries.map((entry) => {
     const timeStr = new Date(entry.timestamp).toLocaleString();
     const actionsSummary = (entry.actionsTaken && entry.actionsTaken.length > 0) ? entry.actionsTaken.join(' ➔ ') : 'No actions';
-    const badgeColor = entry.outcome === 'completed' ? '#4ade80' : (entry.outcome === 'paused' ? '#38bdf8' : '#f87171');
+
+    // Prompt 81: Distinct badge for user-corrected steps
+    let badgeColor = '#4ade80'; // completed
+    let outcomeBadge = entry.outcome;
+    if (entry.outcome === 'paused') { badgeColor = '#38bdf8'; }
+    else if (entry.outcome === 'user-corrected') { badgeColor = '#a78bfa'; outcomeBadge = '✏️ user-corrected'; }
+    else if (entry.outcome !== 'completed') { badgeColor = '#f87171'; }
+
     const perfMode = (entry.performanceMode || 'balanced').toUpperCase();
 
     const snapshotRules = entry.policySnapshot || {};
@@ -689,15 +757,21 @@ async function renderVaultTab() {
       return `${rule}: ${state}`;
     }).join(' | ') || 'Default Policy';
 
+    // Prompt 81: Show correction text if present
+    const correctionRow = entry.correctedByUser && entry.correctionText
+      ? `<div style="font-size:0.72rem;color:#a78bfa;margin-bottom:4px;">✏️ User instruction: "<em>${entry.correctionText.replace(/</g,'&lt;')}</em>"</div>`
+      : '';
+
     return `
-      <div style="background-color: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 10px; margin-bottom: 8px;">
+      <div style="background-color: #1e293b; border: 1px solid ${entry.correctedByUser ? '#7c3aed' : '#334155'}; border-radius: 6px; padding: 10px; margin-bottom: 8px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
           <span style="font-weight: bold; color: #f8fafc; font-size: 0.82rem;">${entry.siteUrl}</span>
-          <span style="font-size: 0.7rem; color: ${badgeColor}; font-weight: bold; text-transform: uppercase;">${entry.outcome}</span>
+          <span style="font-size: 0.7rem; color: ${badgeColor}; font-weight: bold; text-transform: uppercase;">${outcomeBadge}</span>
         </div>
         <div style="font-size: 0.72rem; color: #94a3b8; margin-bottom: 4px;">
           ${timeStr} | Mode: <b style="color:#38bdf8;">${perfMode}</b> | Redacted: ${entry.redactedCount || entry.piiCount || 0} | Skipped: ${entry.skippedCount || 0}
         </div>
+        ${correctionRow}
         <div style="font-size: 0.75rem; color: #cbd5e1; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
           Actions: ${actionsSummary}
         </div>
@@ -847,6 +921,29 @@ window.stopIntervention = async function (id) {
     renderNotificationsTab();
     updateBadgeState('ready', 'Stopped');
   }
+};
+
+// Prompt 81: User sends a correction instruction on a paused step
+window.sendUserCorrection = async function (interventionId, correctionText) {
+  // Mark local intervention as 'user-corrected' so notifications tab reflects it
+  const item = pendingInterventions.find((i) => i.id === interventionId);
+  if (item) item.status = 'user-corrected';
+
+  try {
+    await browser.runtime.sendMessage({
+      type: 'USER_CORRECTION',
+      interventionId,
+      correctionText,
+    });
+  } catch (err) {
+    console.error('[Popup] Failed to send USER_CORRECTION:', err);
+  }
+
+  // Switch to live view so the user sees the redirected loop
+  const liveViewBtn = document.querySelector('[data-tab="live-view-tab"]');
+  if (liveViewBtn) liveViewBtn.click();
+
+  renderNotificationsTab();
 };
 
 // =========================================================================
