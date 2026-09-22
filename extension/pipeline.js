@@ -82,9 +82,18 @@ async function processScreenshot(imageDataUrl, domStructure = [], currentSiteUrl
   let rawPiiRegions = await extractPiiFn(processingImage, domStructure);
   const piiTiming = Math.round(performance.now() - piiStart);
 
-  // 2b. Execute Face detection
+  // Determine which face model to use based on performance mode
+  let faceModelPath = './models/face_detector_balanced.onnx';
+  if (performanceMode === 'fast') {
+    faceModelPath = './models/face_detector_fast.onnx';
+  } else {
+    // Balanced and Accurate both use the balanced model
+    faceModelPath = './models/face_detector_balanced.onnx';
+  }
+
+  // 2b. Execute Face detection with selected model
   const faceStart = performance.now();
-  let rawFaceRegions = await detectFacesFn(processingImage);
+  let rawFaceRegions = await detectFacesFn(processingImage, 1, faceModelPath);
   const faceTiming = Math.round(performance.now() - faceStart);
 
   // If accurate mode upscaled, adjust bounding box coordinates back to original scale
