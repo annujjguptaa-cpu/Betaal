@@ -713,10 +713,23 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
           // Prompt 78: Surface human-readable summary in feed
           const counts = agentLoopState.lastPipelineResult?.counts || { detected: 0, redacted: 0, skipped: 0 };
           const detectionSummary = `${counts.detected || 0} sensitive items detected (${counts.redacted || 0} redacted, ${counts.skipped || 0} skipped)`;
-          
+
+          // Prompt 84: Annotate whether the value came from local profile or VLM
+          const valueResolution = execRes.valueResolution || null;
+          const resolutionBadge = valueResolution === 'local-profile'
+            ? ` 🔐 [Local Profile]`
+            : valueResolution === 'vlm-provided'
+            ? ` ☁️ [VLM-provided]`
+            : '';
+
           let actionLabel = `Executed [${actionResponse.action}]`;
           if (actionResponse.action === 'click') actionLabel = `Clicked element "${actionResponse.selector}"`;
-          else if (actionResponse.action === 'type') actionLabel = `Typed into "${actionResponse.selector}"`;
+          else if (actionResponse.action === 'type') {
+            const fieldLabel = actionResponse.valueSource
+              ? `"${actionResponse.selector}" (profile: ${actionResponse.valueSource})`
+              : `"${actionResponse.selector}"`;
+            actionLabel = `Typed into ${fieldLabel}${resolutionBadge}`;
+          }
           else if (actionResponse.action === 'scroll') actionLabel = `Scrolled "${actionResponse.selector}"`;
 
           const completedFeedItem = {

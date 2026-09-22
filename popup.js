@@ -119,6 +119,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (targetTabId === 'vault-tab') renderVaultTab();
       if (targetTabId === 'notifications-tab') renderNotificationsTab();
       if (targetTabId === 'policy-tab') renderPolicyTab();
+      if (targetTabId === 'profile-tab') renderProfileTab();
     });
   });
 
@@ -128,6 +129,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderVaultTab();
   renderNotificationsTab();
   renderPolicyTab();
+  renderProfileTab();
+  wireProfileTab();  // Wire save/clear handlers once on load
 });
 
 // =========================================================================
@@ -945,6 +948,91 @@ window.sendUserCorrection = async function (interventionId, correctionText) {
 
   renderNotificationsTab();
 };
+
+// =========================================================================
+// PROFILE TAB (Prompt 82) — Local Identity Store, Never Leaves the Device
+// =========================================================================
+
+const PROFILE_FIELD_MAP = {
+  fullName:    'pf-fullName',
+  email:       'pf-email',
+  phone:       'pf-phone',
+  aadhaar:     'pf-aadhaar',
+  pan:         'pf-pan',
+  passport:    'pf-passport',
+  address:     'pf-address',
+  pinCode:     'pf-pinCode',
+  dateOfBirth: 'pf-dateOfBirth',
+  bankAccount: 'pf-bankAccount',
+};
+
+async function renderProfileTab() {
+  // Load current saved values and populate the form fields
+  try {
+    const res = await browser.storage.local.get(['localProfile']);
+    const profile = res.localProfile || {};
+    for (const [key, inputId] of Object.entries(PROFILE_FIELD_MAP)) {
+      const el = document.getElementById(inputId);
+      if (el && profile[key] != null) el.value = profile[key];
+    }
+  } catch (e) {
+    console.warn('[ProfileTab] Failed to load profile:', e);
+  }
+}
+
+function wireProfileTab() {
+  const form = document.getElementById('profile-form');
+  const saveMsg = document.getElementById('profile-save-msg');
+  const clearBtn = document.getElementById('profile-clear-btn');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const partial = {};
+    for (const [key, inputId] of Object.entries(PROFILE_FIELD_MAP)) {
+      const el = document.getElementById(inputId);
+      if (el && el.value.trim()) partial[key] = el.value.trim();
+    }
+    try {
+      // Save via the API exposed by local-profile.js (already loaded as a script)
+      if (typeof saveProfile === 'function') {
+        await saveProfile(partial);
+      } else {
+        // Fallback: write directly to storage
+        const existing = (await browser.storage.local.get(['localProfile'])).localProfile || {};
+        await browser.storage.local.set({ localProfile: { ...existing, ...partial } });
+      }
+      if (saveMsg) {
+        saveMsg.textContent = '✅ Profile saved locally.';
+        saveMsg.style.display = 'block';
+        setTimeout(() => { saveMsg.style.display = 'none'; }, 2500);
+      }
+    } catch (err) {
+      if (saveMsg) {
+        saveMsg.textContent = '❌ Save failed: ' + err.message;
+        saveMsg.style.color = '#ef4444';
+        saveMsg.style.display = 'block';
+      }
+    }
+  });
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', async () => {
+      if (!confirm('Clear all saved profile data?')) return;
+      await browser.storage.local.remove(['localProfile']);
+      for (const inputId of Object.values(PROFILE_FIELD_MAP)) {
+        const el = document.getElementById(inputId);
+        if (el) el.value = '';
+      }
+      if (saveMsg) {
+        saveMsg.textContent = '🗑 Profile cleared.';
+        saveMsg.style.color = '#94a3b8';
+        saveMsg.style.display = 'block';
+        setTimeout(() => { saveMsg.style.display = 'none'; }, 2000);
+      }
+    });
+  }
+}
 
 // =========================================================================
 // POLICY TAB SETTINGS UI WIRING

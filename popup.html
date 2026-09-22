@@ -430,6 +430,32 @@
       background: rgba(124, 58, 237, 0.06);
     }
 
+    /* Prompt 82: Profile Tab Form */
+    .profile-field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .profile-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #94a3b8;
+    }
+    .profile-label.pii-sensitive { color: #f59e0b; }
+    .profile-input {
+      padding: 6px 9px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      color: #f8fafc;
+      font-size: 0.8rem;
+      outline: none;
+      transition: border-color 0.15s;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .profile-input:focus { border-color: #38bdf8; }
+
     .tab-bar {
       display: flex;
       border-bottom: 1px solid #334155;
@@ -499,6 +525,7 @@
     <button class="tab-btn" data-tab="vault-tab">Vault</button>
     <button class="tab-btn" data-tab="notifications-tab">Notifications</button>
     <button class="tab-btn" data-tab="policy-tab">Policy</button>
+    <button class="tab-btn" data-tab="profile-tab">Profile</button>
   </div>
 
   <!-- Tab 1: Live View -->
@@ -628,6 +655,69 @@
     </div>
   </div>
 
+  <!-- Tab 5: Profile (Prompt 82) — Stored locally ONLY, never sent over network -->
+  <div id="profile-tab" class="tab-content">
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="font-size:1rem;">🔐</span>
+        <h3 style="font-size:0.88rem;color:#38bdf8;margin:0;">Local Identity Profile</h3>
+      </div>
+      <p style="font-size:0.72rem;color:#64748b;margin:0 0 10px 0;line-height:1.4;">
+        Stored <b>only on this device</b> in <code>chrome.storage.local</code>. Never sent to any server.
+        When the agent needs to fill a sensitive field, it reads from here at the moment of typing — the real value is never part of any network request.
+      </p>
+    </div>
+
+    <form id="profile-form" autocomplete="off" style="display:flex;flex-direction:column;gap:10px;">
+      <div class="profile-field-group">
+        <label class="profile-label" for="pf-fullName">Full Name</label>
+        <input class="profile-input" id="pf-fullName" type="text" placeholder="e.g. Rahul Sharma" autocomplete="off" />
+      </div>
+      <div class="profile-field-group">
+        <label class="profile-label" for="pf-email">Email Address</label>
+        <input class="profile-input" id="pf-email" type="email" placeholder="e.g. rahul@example.com" autocomplete="off" />
+      </div>
+      <div class="profile-field-group">
+        <label class="profile-label" for="pf-phone">Phone Number</label>
+        <input class="profile-input" id="pf-phone" type="tel" placeholder="e.g. 9876543210" autocomplete="off" />
+      </div>
+      <div class="profile-field-group">
+        <label class="profile-label pii-sensitive" for="pf-aadhaar">🔑 Aadhaar Number</label>
+        <input class="profile-input" id="pf-aadhaar" type="password" placeholder="12-digit number (stored locally)" autocomplete="off" />
+      </div>
+      <div class="profile-field-group">
+        <label class="profile-label pii-sensitive" for="pf-pan">🔑 PAN Number</label>
+        <input class="profile-input" id="pf-pan" type="password" placeholder="e.g. ABCDE1234F (stored locally)" autocomplete="off" />
+      </div>
+      <div class="profile-field-group">
+        <label class="profile-label pii-sensitive" for="pf-passport">🔑 Passport Number</label>
+        <input class="profile-input" id="pf-passport" type="password" placeholder="e.g. J1234567 (stored locally)" autocomplete="off" />
+      </div>
+      <div class="profile-field-group">
+        <label class="profile-label" for="pf-address">Address</label>
+        <input class="profile-input" id="pf-address" type="text" placeholder="Street, City" autocomplete="off" />
+      </div>
+      <div class="profile-field-group">
+        <label class="profile-label" for="pf-pinCode">PIN Code</label>
+        <input class="profile-input" id="pf-pinCode" type="text" placeholder="6-digit PIN" autocomplete="off" />
+      </div>
+      <div class="profile-field-group">
+        <label class="profile-label" for="pf-dateOfBirth">Date of Birth</label>
+        <input class="profile-input" id="pf-dateOfBirth" type="text" placeholder="DD/MM/YYYY" autocomplete="off" />
+      </div>
+      <div class="profile-field-group">
+        <label class="profile-label pii-sensitive" for="pf-bankAccount">🔑 Bank Account / IFSC</label>
+        <input class="profile-input" id="pf-bankAccount" type="password" placeholder="Account number or IFSC (stored locally)" autocomplete="off" />
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button type="submit" id="profile-save-btn" style="flex:2;">💾 Save Profile</button>
+        <button type="button" id="profile-clear-btn" style="flex:1;background:#475569;font-size:0.78rem;padding:8px;">🗑 Clear</button>
+      </div>
+      <div id="profile-save-msg" style="font-size:0.72rem;color:#4ade80;text-align:center;display:none;margin-top:4px;"></div>
+    </form>
+  </div>
+
   <!-- Image Zoom Modal -->
   <div id="image-modal" class="image-modal">
     <img id="modal-img" src="" alt="Enlarged View" />
@@ -648,6 +738,8 @@
   <script src="extension/network.js"></script>
   <script src="extension/intervention-rules.js"></script>
   <script src="extension/vault.js"></script>
+  <!-- Prompt 82: local-profile.js loaded BEFORE popup.js; NOT before network.js -->
+  <script src="extension/local-profile.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
