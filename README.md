@@ -98,7 +98,7 @@ flowchart TD
         T -- Approved --> U
         
         R -- No --> U[Validate Selector Presence on Page]
-        U -- Missing Selector --> V[Re-prompt Backend with Available DOM List (Max 2 Retries)]
+        U -- Missing Selector --> V["Re-prompt Backend with Available DOM List (Max 2 Retries)"]
         V --> P
         
         U -- Valid Selector --> W[Execute Action: Click / Scroll / Type with Red Outline Highlight]
@@ -120,7 +120,7 @@ flowchart TD
         UI[Popup UI] -->|User selects mode| Policy[Policy Store]
         UI -->|Run Agent| Capture[Capture Screenshot]
         Capture --> Pipeline[processScreenshot]
-        Pipeline -->|Load Model| LoadModel[loadFaceModel (per‑model cache)]
+        Pipeline -->|Load Model| LoadModel["loadFaceModel (per‑model cache)"]
         Pipeline -->|Detect Faces| FaceDetect[detectFaces]
         Pipeline -->|Detect PII| PIIDetect[detectSensitivePII]
         Pipeline -->|(optional) Classify| ViT[ViT Classifier]
