@@ -58,8 +58,12 @@ if (chromeApi.notifications && chromeApi.notifications.onClicked) {
 }
 
 // =========================================================================
-// AGENT LOOP STATE & RUNNING-STATE LOCK (Prompts 69, 70, 71)
+// AGENT LOOP STATE & RUNNING-STATE LOCK (Prompts 69, 70, 71, 76)
 // =========================================================================
+
+// Prompt 76: Configurable human-like pacing delay range
+const PACING_DELAY_MIN_MS = 400;
+const PACING_DELAY_MAX_MS = 900;
 
 let agentLoopState = {
   isLocked: false,            // Prompt 70: Running-state lock
@@ -78,7 +82,8 @@ let agentLoopState = {
   activeTabId: null,
   activeTabUrl: 'Unknown Site',
   lastPipelineResult: null,
-  domStabilityMs: 0
+  domStabilityMs: 0,
+  pacingDelayMs: 0            // Prompt 76: Recorded pacing delay before capture
 };
 
 /**
@@ -358,9 +363,38 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
       agentLoopState.pausedAction = null;
     }
 
+    // =========================================================================
+    // PROMPT 75: INITIAL SPA READINESS & DOM STRUCTURE STABILITY CHECK
+    // =========================================================================
+    if (agentLoopState.iterationCount === 0 && !resumeAction) {
+      addLoopLog('⏳ Verifying initial page readiness (document.readyState)...');
+      try {
+        const readyCheck = await browser.tabs.sendMessage(activeTab.id, { type: 'CHECK_PAGE_READY' });
+        if (readyCheck && !readyCheck.isComplete) {
+          addLoopLog(`⏳ Page readyState is "${readyCheck.readyState}". Waiting for initial DOM stability...`);
+          await browser.tabs.sendMessage(activeTab.id, {
+            type: 'WAIT_FOR_DOM_STABLE',
+            timeoutMs: 2500,
+            quietMs: 400
+          });
+        }
+      } catch (e) {
+        // Content script will be verified in liveness step below
+      }
+    }
+
     while (agentLoopState.iterationCount < agentLoopState.maxIterations) {
       agentLoopState.iterationCount++;
       addLoopLog(`\n🔄 --- Agent Loop Iteration ${agentLoopState.iterationCount}/${agentLoopState.maxIterations} ---`);
+
+      // =========================================================================
+      // PROMPT 76: PACING DELAY BEFORE CAPTURING SCREEN
+      // Mimics human perceptual pause and allows in-flight UI transitions to settle
+      // =========================================================================
+      const pacingDelay = Math.floor(Math.random() * (PACING_DELAY_MAX_MS - PACING_DELAY_MIN_MS + 1)) + PACING_DELAY_MIN_MS;
+      agentLoopState.pacingDelayMs = pacingDelay;
+      addLoopLog(`⏱️ Applying pacing pause (${pacingDelay}ms) for visual settling...`);
+      await new Promise(resolve => setTimeout(resolve, pacingDelay));
 
       // Prompt 69: Verify content script liveness before capture
       const isContentAlive = await verifyContentScriptLiveness(activeTab.id, 3000);
@@ -382,7 +416,7 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         throw new Error('Failed to capture tab screenshot: ' + capErr.message);
       }
 
-      // Stage 2: Extract DOM Structure
+      // Stage 2: Extract DOM Structure (with Prompt 75 sparse check)
       addLoopLog('⏳ Fetching page DOM structure...');
       let domStructure = [];
       try {
@@ -396,6 +430,19 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         });
         const retryDom = await browser.tabs.sendMessage(activeTab.id, { type: 'GET_DOM_STRUCTURE' });
         domStructure = (retryDom && retryDom.success) ? retryDom.domStructure : [];
+      }
+
+      // Prompt 75: If DOM is sparse (< 2 interactive elements on SPA loading skeleton), wait 1000ms & re-fetch
+      if (domStructure.length < 2) {
+        addLoopLog('⏳ Sparse DOM detected (< 2 elements). Waiting 1000ms for SPA hydration...');
+        await new Promise(r => setTimeout(r, 1000));
+        try {
+          const rehydratedDom = await browser.tabs.sendMessage(activeTab.id, { type: 'GET_DOM_STRUCTURE' });
+          if (rehydratedDom && rehydratedDom.success && rehydratedDom.domStructure.length > 0) {
+            domStructure = rehydratedDom.domStructure;
+            addLoopLog(`✅ DOM hydrated with ${domStructure.length} interactive elements.`);
+          }
+        } catch (e) {}
       }
 
       // Stage 3: Send Redacted Context to Backend VLM
@@ -468,10 +515,52 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
       }
 
       // Stage 5: Execute Action with Selector Fallback & Retry (Up to 2 Retries)
+      // Prompt 77: Proactive selector pre-validation before attempting execution
       let retryAttempts = 0;
       let actionExecuted = false;
 
       while (retryAttempts <= 2 && !actionExecuted) {
+        // Prompt 77: Check if selector exists before attempting action
+        if (actionResponse.selector && actionResponse.action !== 'wait') {
+          addLoopLog(`🔍 Pre-validating selector "${actionResponse.selector}" exists in current DOM...`);
+          let selectorCheck = { success: true, exists: true };
+          try {
+            selectorCheck = await browser.tabs.sendMessage(activeTab.id, {
+              type: 'CHECK_SELECTOR',
+              selector: actionResponse.selector
+            });
+          } catch (selErr) {
+            selectorCheck = { success: false, exists: false };
+          }
+
+          if (!selectorCheck || !selectorCheck.exists) {
+            if (retryAttempts < 2) {
+              retryAttempts++;
+              agentLoopState.consecutiveFailures++;
+              addLoopLog(`⚠️ Pre-validation: Selector "${actionResponse.selector}" is missing from DOM. Re-prompting VLM backend (Retry ${retryAttempts}/2)...`);
+              
+              const freshDomRes = await browser.tabs.sendMessage(activeTab.id, { type: 'GET_DOM_STRUCTURE' }).catch(() => ({}));
+              const freshDom = (freshDomRes && freshDomRes.success) ? freshDomRes.domStructure : domStructure;
+
+              const correctionGoal = `${agentLoopState.goal}\n\nThe selector [${actionResponse.selector}] does not exist on this page. Available elements:\n${JSON.stringify(freshDom)}\nChoose a selector ONLY from this list.`;
+              
+              const retryBackend = await fetch(`${BACKEND_URL}/act`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  goal: correctionGoal,
+                  redactedImage: payloadImage,
+                  domStructure: freshDom
+                })
+              });
+              actionResponse = await retryBackend.json();
+              continue; // Re-evaluate with new actionResponse
+            } else {
+              throw new Error("I couldn't find the right element on this page, please complete this step manually.");
+            }
+          }
+        }
+
         addLoopLog(`⏳ Executing action [${actionResponse.action}] on selector "${actionResponse.selector}"...`);
         
         let execRes = null;
@@ -510,7 +599,7 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         } else if (execRes && execRes.selectorNotFound && retryAttempts < 2) {
           retryAttempts++;
           agentLoopState.consecutiveFailures++;
-          addLoopLog(`⚠️ Selector "${actionResponse.selector}" not found. Re-prompting VLM backend (Retry ${retryAttempts}/2)...`);
+          addLoopLog(`⚠️ Selector "${actionResponse.selector}" not found during execution. Re-prompting VLM backend (Retry ${retryAttempts}/2)...`);
           
           const correctionGoal = `${agentLoopState.goal}\n\nThe selector [${actionResponse.selector}] does not exist on this page. Available elements:\n${JSON.stringify(domStructure)}\nChoose a selector ONLY from this list.`;
           

@@ -198,10 +198,12 @@ function applyLoopStateToUI(state) {
     renderNotificationsTab();
   }
 
-  // Sync DOM stability timing display if present (Prompt 68)
-  if (liveTimerEl && state.domStabilityMs) {
+  // Sync DOM stability & pacing timing display if present (Prompts 68 & 76)
+  if (liveTimerEl && (state.domStabilityMs || state.pacingDelayMs)) {
     liveTimerEl.style.display = 'block';
-    liveTimerEl.innerHTML = `⏱️ <b>DOM Stability Latency:</b> ${state.domStabilityMs}ms | Loop Iterations: ${state.iterationCount || 0}`;
+    const pacingText = state.pacingDelayMs ? ` | Pacing Delay: ${state.pacingDelayMs}ms` : '';
+    const domText = state.domStabilityMs ? `DOM Stability: ${state.domStabilityMs}ms` : 'DOM: settled';
+    liveTimerEl.innerHTML = `⏱️ <b>Loop Telemetry:</b> ${domText}${pacingText} | Iteration: ${state.iterationCount || 0}/${state.maxIterations || 15}`;
   }
 }
 
@@ -329,6 +331,28 @@ function renderPipelineArtifacts(pipelineRes) {
   if (thumbRedEl) thumbRedEl.addEventListener('click', () => openZoom(pipelineRes.redactedImage));
   if (closeModalBtn) closeModalBtn.addEventListener('click', () => { modal.style.display = 'none'; });
   if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+
+  // Render Degradation Notes banner if any detector failed gracefully (Prompt 73)
+  let notesBanner = debugPanel.querySelector('.degradation-notes-banner');
+  if (pipelineRes.degradationNotes && pipelineRes.degradationNotes.length > 0) {
+    if (!notesBanner) {
+      notesBanner = document.createElement('div');
+      notesBanner.className = 'degradation-notes-banner';
+      debugPanel.insertBefore(notesBanner, debugPanel.firstChild);
+    }
+    notesBanner.innerHTML = `
+      <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; color: #fca5a5; font-size: 0.8rem;">
+        <div style="font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+          <span>⚠️</span> <span>Pipeline Partial Degradation Notice:</span>
+        </div>
+        <ul style="margin: 0; padding-left: 18px;">
+          ${pipelineRes.degradationNotes.map(n => `<li>${n}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  } else if (notesBanner) {
+    notesBanner.remove();
+  }
 
   // Render Redacted PII Audit Table
   let tableContainer = debugPanel.querySelector('.detection-table-container');

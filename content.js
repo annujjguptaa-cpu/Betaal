@@ -190,6 +190,26 @@ if (browserApi && browserApi.runtime && browserApi.runtime.onMessage) {
       return { success: true, ...stabilityResult };
     }
 
+    // Prompt 75: Check document readyState & body readiness for SPAs
+    if (message.type === 'CHECK_PAGE_READY') {
+      const readyState = document.readyState;
+      const isComplete = readyState === 'complete';
+      return { success: true, readyState, isComplete };
+    }
+
+    // Prompt 77: Re-validate selector presence immediately before action execution
+    if (message.type === 'CHECK_SELECTOR') {
+      if (!message.selector) {
+        return { success: true, exists: false, error: 'No selector provided' };
+      }
+      try {
+        const el = document.querySelector(message.selector);
+        return { success: true, exists: !!el };
+      } catch (selErr) {
+        return { success: true, exists: false, error: selErr.message };
+      }
+    }
+
     if (message.type === 'GET_DOM_STRUCTURE') {
       return { success: true, domStructure: getDOMStructure() };
     }

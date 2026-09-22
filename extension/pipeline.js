@@ -8,10 +8,26 @@
  *    - 'Fast' mode: Skips the ViT screen classification step entirely (0ms classification overhead), running detectors directly.
  *    - 'Balanced' mode: Default pipeline (ViT classification first to guide processing, then detection).
  *    - 'Accurate' mode: Upscales image canvas by 1.5x before passing to detectors, improving detection sensitivity on small text/fields.
+ *
+ * PROMPT 74 ARCHITECTURE - LARGE SCREENSHOT NORMALIZATION:
+ * --------------------------------------------------------
+ * If screenshot dimensions exceed MAX_SCREEN_DIM (1920px), we downscale it proportionally before running
+ * any detection models (OCR, BlazeFace, ViT), bounding worst-case latency on 4K/retina displays.
+ * All detected bounding boxes are scaled back up to the original image dimensions before redaction,
+ * ensuring redaction lands accurately on the full-resolution screenshot without artifacts.
+ *
+ * PROMPT 73 ARCHITECTURE - GRACEFUL DEGRADATION:
+ * ----------------------------------------------
+ * Each detection stage (ViT, PII/OCR, Face detection) is wrapped in its own try/catch.
+ * If one detector fails (timeout, missing tensor, corrupted canvas), the pipeline records a
+ * degradation note (e.g. 'Face detection unavailable this run') and continues with partial results.
  */
+
+const MAX_SCREEN_DIM = 1920;
 
 async function processScreenshot(imageDataUrl, domStructure = [], currentSiteUrl = '') {
   const pipelineStart = performance.now();
+  const degradationNotes = [];
 
   let extractPiiFn = typeof detectSensitivePII !== 'undefined' ? detectSensitivePII : null;
   let detectFacesFn = typeof detectFaces !== 'undefined' ? detectFaces : null;
@@ -45,41 +61,101 @@ async function processScreenshot(imageDataUrl, domStructure = [], currentSiteUrl
   const rules = effectivePolicy.rules;
   const performanceMode = effectivePolicy.performanceMode || 'balanced';
 
-  let processingImage = imageDataUrl;
-  let scaleFactor = 1.0;
+  // =========================================================================
+  // PROMPT 74: NORMALIZE LARGE SCREENSHOTS BEFORE PROCESSING
+  // Cap longest side at 1920px. Keep aspect ratio. Scale back boxes up later.
+  // =========================================================================
+  let normScale = 1.0;
+  let workingImage = imageDataUrl;
 
-  // Accurate Mode: Upscale image by 1.5x for higher sensitivity on small fields
+  if (typeof document !== 'undefined') {
+    try {
+      const origImg = new Image();
+      await new Promise((res, rej) => {
+        origImg.onload = res;
+        origImg.onerror = rej;
+        origImg.src = imageDataUrl;
+      });
+
+      const origW = origImg.width;
+      const origH = origImg.height;
+
+      if (origW > MAX_SCREEN_DIM || origH > MAX_SCREEN_DIM) {
+        normScale = Math.min(MAX_SCREEN_DIM / origW, MAX_SCREEN_DIM / origH);
+        const normW = Math.round(origW * normScale);
+        const normH = Math.round(origH * normScale);
+
+        const normCanvas = document.createElement('canvas');
+        normCanvas.width = normW;
+        normCanvas.height = normH;
+        const normCtx = normCanvas.getContext('2d');
+        normCtx.drawImage(origImg, 0, 0, normW, normH);
+        workingImage = normCanvas.toDataURL('image/png');
+        console.log(`[Prompt 74 Normalization] Downscaled large screenshot from ${origW}x${origH} to ${normW}x${normH} (scale=${normScale.toFixed(3)})`);
+      }
+    } catch (normErr) {
+      console.warn('[Prompt 74 Normalization] Downscale skipped due to error:', normErr.message);
+      normScale = 1.0;
+      workingImage = imageDataUrl;
+    }
+  }
+
+  // Accurate Mode: Upscale working image by 1.5x for higher sensitivity on small fields
+  let modeScale = 1.0;
+  let processingImage = workingImage;
+
   if (performanceMode === 'accurate' && typeof document !== 'undefined') {
     try {
       const img = new Image();
-      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = imageDataUrl; });
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = workingImage; });
       const upCanvas = document.createElement('canvas');
-      scaleFactor = 1.5;
-      upCanvas.width = Math.round(img.width * scaleFactor);
-      upCanvas.height = Math.round(img.height * scaleFactor);
+      modeScale = 1.5;
+      upCanvas.width = Math.round(img.width * modeScale);
+      upCanvas.height = Math.round(img.height * modeScale);
       const ctx = upCanvas.getContext('2d');
       ctx.drawImage(img, 0, 0, upCanvas.width, upCanvas.height);
       processingImage = upCanvas.toDataURL('image/png');
     } catch (scaleErr) {
-      scaleFactor = 1.0;
-      processingImage = imageDataUrl;
+      modeScale = 1.0;
+      processingImage = workingImage;
     }
   }
 
-  // 1. Screen Classification (Fast mode skips ViT classification entirely)
+  // Combined scale factor from original imageDataUrl to processingImage:
+  // processingCoords = originalCoords * normScale * modeScale
+  const totalDetectorScale = normScale * modeScale;
+
+  // =========================================================================
+  // 1. Screen Classification (Prompt 73: Wrapped in Try/Catch for Graceful Degradation)
+  // =========================================================================
   let screenType = 'both';
   let classificationTime = 0;
 
   if (performanceMode !== 'fast') {
     const classStart = performance.now();
-    const rawClassification = await classifyFn(processingImage);
-    screenType = rawClassification.category || 'both';
+    try {
+      const rawClassification = await classifyFn(processingImage);
+      screenType = rawClassification.category || 'both';
+    } catch (vitErr) {
+      console.warn('[Pipeline Degradation] ViT classifier failed:', vitErr.message);
+      screenType = 'both'; // Fallback to safe default
+      degradationNotes.push('ViT layout classifier unavailable this run (defaulted to general layout)');
+    }
     classificationTime = Math.round(performance.now() - classStart);
   }
 
-  // 2. Execute PII detection
+  // =========================================================================
+  // 2. Execute PII detection (Prompt 73: Wrapped in Try/Catch)
+  // =========================================================================
   const piiStart = performance.now();
-  let rawPiiRegions = await extractPiiFn(processingImage, domStructure);
+  let rawPiiRegions = [];
+  try {
+    rawPiiRegions = await extractPiiFn(processingImage, domStructure);
+  } catch (ocrErr) {
+    console.warn('[Pipeline Degradation] OCR / PII detection failed:', ocrErr.message);
+    rawPiiRegions = [];
+    degradationNotes.push('OCR/PII detection unavailable this run');
+  }
   const piiTiming = Math.round(performance.now() - piiStart);
 
   // Determine which face model to use based on performance mode
@@ -87,34 +163,44 @@ async function processScreenshot(imageDataUrl, domStructure = [], currentSiteUrl
   if (performanceMode === 'fast') {
     faceModelPath = './models/face_detector_fast.onnx';
   } else {
-    // Balanced and Accurate both use the balanced model
     faceModelPath = './models/face_detector_balanced.onnx';
   }
 
-  // 2b. Execute Face detection with selected model
+  // =========================================================================
+  // 2b. Execute Face detection (Prompt 73: Wrapped in Try/Catch)
+  // =========================================================================
   const faceStart = performance.now();
-  let rawFaceRegions = await detectFacesFn(processingImage, 1, faceModelPath);
+  let rawFaceRegions = [];
+  try {
+    rawFaceRegions = await detectFacesFn(processingImage, 1, faceModelPath);
+  } catch (faceErr) {
+    console.warn('[Pipeline Degradation] Face detection failed:', faceErr.message);
+    rawFaceRegions = [];
+    degradationNotes.push('Face detection unavailable this run');
+  }
   const faceTiming = Math.round(performance.now() - faceStart);
 
-  // If accurate mode upscaled, adjust bounding box coordinates back to original scale
-  if (scaleFactor !== 1.0) {
+  // =========================================================================
+  // Scale bounding boxes back up to original image resolution (Prompts 73 & 74)
+  // =========================================================================
+  if (totalDetectorScale !== 1.0) {
     rawPiiRegions = rawPiiRegions.map(r => ({
       ...r,
       boundingBox: {
-        x: Math.round(r.boundingBox.x / scaleFactor),
-        y: Math.round(r.boundingBox.y / scaleFactor),
-        width: Math.round(r.boundingBox.width / scaleFactor),
-        height: Math.round(r.boundingBox.height / scaleFactor)
+        x: Math.round(r.boundingBox.x / totalDetectorScale),
+        y: Math.round(r.boundingBox.y / totalDetectorScale),
+        width: Math.round(r.boundingBox.width / totalDetectorScale),
+        height: Math.round(r.boundingBox.height / totalDetectorScale)
       }
     }));
 
     rawFaceRegions = rawFaceRegions.map(f => ({
       ...f,
       boundingBox: {
-        x: Math.round(f.boundingBox.x / scaleFactor),
-        y: Math.round(f.boundingBox.y / scaleFactor),
-        width: Math.round(f.boundingBox.width / scaleFactor),
-        height: Math.round(f.boundingBox.height / scaleFactor)
+        x: Math.round(f.boundingBox.x / totalDetectorScale),
+        y: Math.round(f.boundingBox.y / totalDetectorScale),
+        width: Math.round(f.boundingBox.width / totalDetectorScale),
+        height: Math.round(f.boundingBox.height / totalDetectorScale)
       }
     }));
   }
@@ -189,9 +275,16 @@ async function processScreenshot(imageDataUrl, domStructure = [], currentSiteUrl
     }
   }
 
-  // 3. Perform Redaction using active policy regions
+  // 3. Perform Redaction using active policy regions on ORIGINAL full-resolution screenshot
   const redactStart = performance.now();
-  const redactedImage = await redactFn(imageDataUrl, activeRedactRegions);
+  let redactedImage = imageDataUrl;
+  try {
+    redactedImage = await redactFn(imageDataUrl, activeRedactRegions);
+  } catch (redactErr) {
+    console.warn('[Pipeline Degradation] Redaction canvas pass failed:', redactErr.message);
+    degradationNotes.push('Redaction overlay render error (served unmodified screenshot)');
+    redactedImage = imageDataUrl;
+  }
   const redactionTime = Math.round(performance.now() - redactStart);
 
   const totalTime = Math.round(performance.now() - pipelineStart);
@@ -211,6 +304,7 @@ async function processScreenshot(imageDataUrl, domStructure = [], currentSiteUrl
     performanceMode,
     policySnapshot,
     effectivePolicy,
+    degradationNotes, // Prompt 73
     timing: {
       classification: classificationTime,
       piiDetection: piiTiming,
@@ -247,6 +341,5 @@ function clearAllModelCaches() {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { processScreenshot, clearAllModelCaches };
+  module.exports = { processScreenshot, clearAllModelCaches, MAX_SCREEN_DIM };
 }
-
