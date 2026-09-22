@@ -252,6 +252,143 @@
       border-bottom: 1px solid #334155;
       margin-bottom: 12px;
     }
+
+    /* Prompt 79 & 80: Activity Feed Styling */
+    .feed-progress-bar {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 2px;
+    }
+
+    .activity-feed-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 420px;
+      overflow-y: auto;
+      padding-right: 4px;
+      margin-bottom: 12px;
+    }
+    .activity-feed-container::-webkit-scrollbar {
+      width: 6px;
+    }
+    .activity-feed-container::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+
+    .feed-card {
+      background-color: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px 12px;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .feed-card.completed {
+      border-left: 4px solid #22c55e;
+    }
+    .feed-card.running {
+      border-left: 4px solid #38bdf8;
+      background: rgba(14, 165, 233, 0.05);
+    }
+    .feed-card.paused {
+      border-left: 4px solid #f59e0b;
+      border-color: #f59e0b;
+      background: rgba(245, 158, 11, 0.08);
+    }
+    .feed-card.stopped {
+      border-left: 4px solid #ef4444;
+      background: rgba(239, 68, 68, 0.05);
+    }
+
+    .feed-card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .feed-icon {
+      font-size: 1rem;
+      line-height: 1.2;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .feed-card-content {
+      flex: 1;
+    }
+    .feed-card-title {
+      font-size: 0.83rem;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 3px;
+    }
+    .feed-card-reasoning {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      line-height: 1.35;
+      margin-bottom: 6px;
+    }
+    .feed-card-meta {
+      font-size: 0.7rem;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Inline Intervention Actions (Prompt 80) */
+    .feed-inline-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed rgba(245, 158, 11, 0.3);
+    }
+    .feed-inline-btn {
+      flex: 1;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s;
+    }
+    .feed-inline-btn:hover { opacity: 0.9; }
+    .feed-approve-btn { background-color: #22c55e; color: #ffffff; }
+    .feed-stop-btn { background-color: #ef4444; color: #ffffff; }
+
+    /* Expandable Step Details (Prompt 79) */
+    .feed-details-toggle {
+      margin-top: 8px;
+      border-top: 1px solid #334155;
+      padding-top: 6px;
+    }
+    .feed-details-toggle summary {
+      cursor: pointer;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #38bdf8;
+      outline: none;
+    }
+    .feed-details-body {
+      margin-top: 8px;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
+    .tab-bar {
+      display: flex;
+      border-bottom: 1px solid #334155;
+      margin-bottom: 12px;
+    }
     .tab-btn {
       flex: 1;
       padding: 8px 0;
@@ -356,7 +493,20 @@
     <div id="mode-comparison-container" style="display: none; margin-bottom: 12px;"></div>
 
     <div id="live-timer" class="timer-badge" style="display: none;"></div>
-    <div id="status-list"></div>
+
+    <!-- Prompt 79: Progress bar & Activity Feed (replaces flat status-list) -->
+    <div id="feed-progress-bar" class="feed-progress-bar" style="display: none;">
+      <span id="feed-progress-text">Step 0</span>
+      <span id="feed-progress-rate" style="font-size: 0.7rem; color: #64748b;"></span>
+    </div>
+
+    <!-- Legacy logs (kept hidden; surfaced only in advanced debug) -->
+    <div id="status-list" style="display: none;"></div>
+
+    <!-- Activity Feed Container -->
+    <div id="activity-feed-container" class="activity-feed-container"></div>
+
+    <!-- Initial pipeline debug panel (thumbnails + first-run detection table) -->
     <div id="debug-panel"></div>
   </div>
 

@@ -74,6 +74,7 @@ let agentLoopState = {
   iterationCount: 0,
   maxIterations: 15,
   actionsTaken: [],
+  activityFeed: [],           // Prompts 78, 79, 80: Structured step summaries & replay history
   consecutiveFailures: 0,
   lastSelector: null,
   logs: [],
@@ -98,6 +99,32 @@ function broadcastLoopState() {
       // Expected error if popup is closed
     });
   } catch (e) {}
+}
+
+/**
+ * Broadcasts an individual feed item update (Prompt 78).
+ */
+function broadcastFeedUpdate(feedItem) {
+  try {
+    browser.runtime.sendMessage({
+      type: 'FEED_UPDATE',
+      feedItem,
+      activityFeed: agentLoopState.activityFeed
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+function addFeedItem(item) {
+  // Check if step exists to update or append
+  const existingIdx = agentLoopState.activityFeed.findIndex(f => f.stepIndex === item.stepIndex && f.status === 'running');
+  if (existingIdx !== -1) {
+    agentLoopState.activityFeed[existingIdx] = { ...agentLoopState.activityFeed[existingIdx], ...item };
+    broadcastFeedUpdate(agentLoopState.activityFeed[existingIdx]);
+  } else {
+    agentLoopState.activityFeed.push(item);
+    broadcastFeedUpdate(item);
+  }
+  broadcastLoopState();
 }
 
 function addLoopLog(msg) {
@@ -211,13 +238,20 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
       return { success: true, started: true };
     }
 
-    // Prompt 71: Approve intervention
+    // Prompt 71 & 80: Approve intervention
     if (message.type === 'APPROVE_INTERVENTION') {
       const id = message.id;
       const item = agentLoopState.pendingInterventions.find((i) => i.id === id);
       if (item) {
         item.status = 'approved';
         setPendingBadgeCount(0);
+        // Prompt 80: Update corresponding feed card status if exists
+        const feedCard = agentLoopState.activityFeed.find(f => f.interventionId === id || (f.status === 'paused' && f.action === item.action?.action));
+        if (feedCard) {
+          feedCard.status = 'approved';
+          feedCard.subtitle = `Approved by user: Proceeding with [${feedCard.action}] on "${feedCard.selector}"`;
+          broadcastFeedUpdate(feedCard);
+        }
         broadcastLoopState();
         const actionToResume = item.action || agentLoopState.pausedAction;
         runBackgroundAgentLoop(agentLoopState.goal, agentLoopState.redactionEnabled, actionToResume);
@@ -225,7 +259,7 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
       return { success: true };
     }
 
-    // Prompt 71: Stop intervention
+    // Prompt 71 & 80: Stop intervention
     if (message.type === 'STOP_INTERVENTION') {
       const id = message.id;
       const item = agentLoopState.pendingInterventions.find((i) => i.id === id);
@@ -235,6 +269,13 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
         agentLoopState.status = 'stopped';
         agentLoopState.statusText = 'Stopped';
         agentLoopState.isLocked = false;
+        // Prompt 80: Update corresponding feed card status if exists
+        const feedCard = agentLoopState.activityFeed.find(f => f.interventionId === id || (f.status === 'paused' && f.action === item.action?.action));
+        if (feedCard) {
+          feedCard.status = 'stopped';
+          feedCard.subtitle = `Stopped by user: Execution halted at this step.`;
+          broadcastFeedUpdate(feedCard);
+        }
         broadcastLoopState();
       }
       return { success: true };
@@ -314,6 +355,7 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
     agentLoopState.lastSelector = null;
     agentLoopState.actionsTaken = [];
     agentLoopState.logs = [];
+    agentLoopState.activityFeed = []; // Reset feed for new task run
     agentLoopState.pausedAction = null;
   }
 
@@ -345,6 +387,25 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         throw new Error(execRes ? execRes.error : 'Execution failed upon resumption.');
       }
       agentLoopState.actionsTaken.push(`[Approved & Executed] ${resumeAction.action} on ${resumeAction.selector}`);
+
+      // Prompt 78 & 80: Mark resumed feed item as completed
+      const resumedFeedItem = {
+        id: 'step_resumed_' + Date.now(),
+        stepIndex: agentLoopState.iterationCount,
+        maxIterations: agentLoopState.maxIterations,
+        status: 'completed',
+        action: resumeAction.action,
+        selector: resumeAction.selector,
+        title: `Executed approved [${resumeAction.action}] on "${resumeAction.selector}"`,
+        subtitle: `User approved action: ${resumeAction.reasoning || 'Executed successfully.'}`,
+        reasoning: resumeAction.reasoning || 'User approved human-in-the-loop action.',
+        detectionCounts: agentLoopState.lastPipelineResult?.counts || null,
+        timing: agentLoopState.lastPipelineResult?.timing || null,
+        originalImage: agentLoopState.lastPipelineResult?.originalImage || null,
+        redactedImage: agentLoopState.lastPipelineResult?.redactedImage || null,
+        timestamp: new Date().toISOString()
+      };
+      addFeedItem(resumedFeedItem);
 
       // Prompt 68: Wait for DOM stability after resumed action
       addLoopLog('⏳ Waiting for DOM stability after action execution...');
@@ -487,11 +548,35 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         addLoopLog(`⚠️ Intervention Triggered: ${interventionCheck.reason}`);
         updateLoopStatus('paused', 'Paused for Approval');
 
-        // Trigger notification
+        // Prompt 78, 79, 80: Construct paused feed item card with inline intervention buttons
+        const interventionId = 'notif_' + Date.now();
+        const counts = agentLoopState.lastPipelineResult?.counts || { detected: 0, redacted: 0, skipped: 0 };
+        const detectionSummary = `${counts.detected || 0} detected (${counts.redacted || 0} redacted, ${counts.skipped || 0} skipped)`;
+        
+        const pausedFeedItem = {
+          id: 'step_' + agentLoopState.iterationCount + '_' + Date.now(),
+          stepIndex: agentLoopState.iterationCount,
+          maxIterations: agentLoopState.maxIterations,
+          status: 'paused',
+          action: actionResponse.action,
+          selector: actionResponse.selector,
+          title: `Paused: Approval Needed for [${actionResponse.action}] on "${actionResponse.selector}"`,
+          subtitle: `Intervention: ${interventionCheck.reason}`,
+          reasoning: actionResponse.reasoning || 'Action flagged by policy for user confirmation.',
+          detectionSummary,
+          detectionCounts: counts,
+          timing: agentLoopState.lastPipelineResult?.timing || null,
+          originalImage: agentLoopState.lastPipelineResult?.originalImage || null,
+          redactedImage: agentLoopState.lastPipelineResult?.redactedImage || payloadImage,
+          interventionId,
+          timestamp: new Date().toISOString()
+        };
+        addFeedItem(pausedFeedItem);
+
         showInterventionNotification(interventionCheck.reason);
 
         agentLoopState.pendingInterventions.unshift({
-          id: 'notif_' + Date.now(),
+          id: interventionId,
           reason: interventionCheck.reason,
           siteUrl: agentLoopState.activeTabUrl,
           action: actionResponse,
@@ -513,6 +598,25 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         broadcastLoopState();
         return; // Pause execution loop
       }
+
+      // Add in-progress feed card before execution
+      const inProgressFeedItem = {
+        id: 'step_' + agentLoopState.iterationCount,
+        stepIndex: agentLoopState.iterationCount,
+        maxIterations: agentLoopState.maxIterations,
+        status: 'running',
+        action: actionResponse.action,
+        selector: actionResponse.selector,
+        title: `Executing [${actionResponse.action}] on "${actionResponse.selector}"`,
+        subtitle: `In progress...`,
+        reasoning: actionResponse.reasoning || '',
+        detectionCounts: agentLoopState.lastPipelineResult?.counts || { detected: 0, redacted: 0, skipped: 0 },
+        timing: agentLoopState.lastPipelineResult?.timing || null,
+        originalImage: agentLoopState.lastPipelineResult?.originalImage || null,
+        redactedImage: agentLoopState.lastPipelineResult?.redactedImage || payloadImage,
+        timestamp: new Date().toISOString()
+      };
+      addFeedItem(inProgressFeedItem);
 
       // Stage 5: Execute Action with Selector Fallback & Retry (Up to 2 Retries)
       // Prompt 77: Proactive selector pre-validation before attempting execution
@@ -581,6 +685,34 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
           agentLoopState.lastSelector = actionResponse.selector;
           agentLoopState.actionsTaken.push(`${actionResponse.action} on ${actionResponse.selector}`);
           addLoopLog(`✅ Action successfully executed.`);
+
+          // Prompt 78: Surface human-readable summary in feed
+          const counts = agentLoopState.lastPipelineResult?.counts || { detected: 0, redacted: 0, skipped: 0 };
+          const detectionSummary = `${counts.detected || 0} sensitive items detected (${counts.redacted || 0} redacted, ${counts.skipped || 0} skipped)`;
+          
+          let actionLabel = `Executed [${actionResponse.action}]`;
+          if (actionResponse.action === 'click') actionLabel = `Clicked element "${actionResponse.selector}"`;
+          else if (actionResponse.action === 'type') actionLabel = `Typed into "${actionResponse.selector}"`;
+          else if (actionResponse.action === 'scroll') actionLabel = `Scrolled "${actionResponse.selector}"`;
+
+          const completedFeedItem = {
+            id: 'step_' + agentLoopState.iterationCount,
+            stepIndex: agentLoopState.iterationCount,
+            maxIterations: agentLoopState.maxIterations,
+            status: 'completed',
+            action: actionResponse.action,
+            selector: actionResponse.selector,
+            title: actionLabel,
+            subtitle: actionResponse.reasoning || `Action completed successfully. ${detectionSummary}`,
+            reasoning: actionResponse.reasoning || 'Executed proposed step based on current page state.',
+            detectionSummary,
+            detectionCounts: counts,
+            timing: agentLoopState.lastPipelineResult?.timing || null,
+            originalImage: agentLoopState.lastPipelineResult?.originalImage || null,
+            redactedImage: agentLoopState.lastPipelineResult?.redactedImage || payloadImage,
+            timestamp: new Date().toISOString()
+          };
+          addFeedItem(completedFeedItem);
 
           // Prompt 68: Wait for DOM stability after action execution before next loop re-capture
           addLoopLog('⏳ Waiting for DOM stability before next capture (quiet window: 300ms)...');

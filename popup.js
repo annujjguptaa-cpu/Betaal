@@ -131,12 +131,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // =========================================================================
-// REACTIVE LISTENER FOR BACKGROUND LOOP EVENTS (Prompts 70, 71)
+// REACTIVE LISTENER FOR BACKGROUND LOOP EVENTS (Prompts 70, 71, 78, 79, 80)
 // =========================================================================
 
 browser.runtime.onMessage.addListener(async (message) => {
   if (message.type === 'LOOP_STATE_UPDATE') {
     applyLoopStateToUI(message.state);
+  }
+  // Prompt 78 & 79: Live feed item update — render single card as it arrives
+  if (message.type === 'FEED_UPDATE') {
+    if (message.activityFeed) {
+      renderActivityFeed(message.activityFeed);
+    }
   }
 });
 
@@ -145,6 +151,10 @@ async function syncWithBackgroundLoopState() {
     const res = await browser.runtime.sendMessage({ type: 'GET_LOOP_STATE' });
     if (res && res.success && res.state) {
       applyLoopStateToUI(res.state);
+      // Prompt 78: Replay full feed history when popup is (re)opened mid-task
+      if (res.state.activityFeed && res.state.activityFeed.length > 0) {
+        renderActivityFeed(res.state.activityFeed);
+      }
     }
   } catch (err) {
     console.warn('[Popup] Failed to sync background loop state:', err);
@@ -186,16 +196,35 @@ function applyLoopStateToUI(state) {
     }
   }
 
-  // Sync Logs
+  // Sync Logs (hidden, available for debugging)
   if (statusList && Array.isArray(state.logs)) {
     statusList.innerHTML = state.logs.map(log => `<div>${log}</div>`).join('');
-    statusList.scrollTop = statusList.scrollHeight;
   }
 
   // Sync Pending Interventions
   if (Array.isArray(state.pendingInterventions)) {
     pendingInterventions = state.pendingInterventions;
     renderNotificationsTab();
+  }
+
+  // Prompt 79: Update feed progress bar
+  const feedProgressBar = document.getElementById('feed-progress-bar');
+  const feedProgressText = document.getElementById('feed-progress-text');
+  const feedProgressRate = document.getElementById('feed-progress-rate');
+  if (feedProgressBar && state.iterationCount > 0) {
+    feedProgressBar.style.display = 'flex';
+    const stepLabel = state.isLocked
+      ? `Step ${state.iterationCount} of ${state.maxIterations || 15} — Running`
+      : state.status === 'paused'
+      ? `Step ${state.iterationCount} — ⚠️ Awaiting Approval`
+      : state.status === 'error'
+      ? `Step ${state.iterationCount} — ❌ Error`
+      : `Step ${state.iterationCount} of ${state.maxIterations || 15} — ${state.statusText || 'Complete'}`;
+    if (feedProgressText) feedProgressText.textContent = stepLabel;
+    if (feedProgressRate && state.domStabilityMs) {
+      const pacingText = state.pacingDelayMs ? ` · ${state.pacingDelayMs}ms pacing` : '';
+      feedProgressRate.textContent = `DOM: ${state.domStabilityMs}ms${pacingText}`;
+    }
   }
 
   // Sync DOM stability & pacing timing display if present (Prompts 68 & 76)
@@ -282,6 +311,129 @@ async function triggerAgentLoop(resumeAction = null) {
       runBtn.textContent = 'Run Agent';
     }
   }
+}
+
+// =========================================================================
+// ACTIVITY FEED RENDERER (Prompts 78, 79, 80)
+// =========================================================================
+
+function getFeedIcon(status) {
+  switch (status) {
+    case 'completed': return '✅';
+    case 'running':   return '<span style="display:inline-block;animation:spin 1s linear infinite;">⏳</span>';
+    case 'paused':    return '🔔';
+    case 'approved':  return '▶️';
+    case 'stopped':   return '🛑';
+    default:          return '🔹';
+  }
+}
+
+function buildFeedCardHTML(item) {
+  const icon = getFeedIcon(item.status);
+  const stepLabel = item.maxIterations
+    ? `Step ${item.stepIndex} of ${item.maxIterations}`
+    : `Step ${item.stepIndex}`;
+
+  // Detection count meta string
+  const counts = item.detectionCounts || {};
+  const metaDetection = counts.detected !== undefined
+    ? `${counts.detected} detected · ${counts.redacted || 0} redacted · ${counts.skipped || 0} skipped`
+    : '';
+
+  // Timing string from pipeline result
+  const timing = item.timing;
+  const metaTiming = timing
+    ? `PII: ${timing.piiDetection}ms · Face: ${timing.faceDetection}ms · Redact: ${timing.redaction}ms`
+    : '';
+
+  // Inline action buttons (Prompt 80) — only for paused steps
+  const inlineActions = item.status === 'paused' && item.interventionId ? `
+    <div class="feed-inline-actions">
+      <div style="font-size:0.72rem;color:#f59e0b;margin-bottom:6px;width:100%;">
+        ⚠️ Approval required: <b>${item.subtitle}</b>
+      </div>
+      <button class="feed-inline-btn feed-approve-btn" data-id="${item.interventionId}">✅ Approve &amp; Continue</button>
+      <button class="feed-inline-btn feed-stop-btn" data-id="${item.interventionId}">🛑 Stop Here</button>
+    </div>` : '';
+
+  // Expandable Details (Prompt 79) — thumbnails + timing inside <details>
+  const thumbsHTML = (item.originalImage && item.redactedImage) ? `
+    <div class="thumbnails-row" style="margin-bottom:8px;">
+      <div class="thumb-card" style="max-width:50%;">
+        <span>Original</span>
+        <img src="${item.originalImage}" class="feed-step-thumb" data-src="${item.originalImage}" style="cursor:zoom-in;" />
+      </div>
+      <div class="thumb-card" style="max-width:50%;">
+        <span>Redacted</span>
+        <img src="${item.redactedImage}" class="feed-step-thumb" data-src="${item.redactedImage}" style="cursor:zoom-in;" />
+      </div>
+    </div>` : '';
+
+  const detailsBody = (thumbsHTML || metaTiming) ? `
+    <details class="feed-details-toggle">
+      <summary>🔍 Step Details</summary>
+      <div class="feed-details-body">
+        ${thumbsHTML}
+        ${metaTiming ? `<div style="font-size:0.7rem;color:#64748b;margin-top:4px;">${metaTiming}</div>` : ''}
+        ${item.detectionSummary ? `<div style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">🛡️ ${item.detectionSummary}</div>` : ''}
+      </div>
+    </details>` : '';
+
+  return `
+    <div class="feed-card ${item.status}" data-step-id="${item.id}">
+      <div class="feed-card-header">
+        <span class="feed-icon">${icon}</span>
+        <div class="feed-card-content">
+          <div class="feed-card-title">${item.title}</div>
+          ${item.reasoning ? `<div class="feed-card-reasoning">${item.reasoning}</div>` : ''}
+          <div class="feed-card-meta">
+            <span>${stepLabel}</span>
+            <span style="color:#475569;">${metaDetection}</span>
+          </div>
+        </div>
+      </div>
+      ${inlineActions}
+      ${detailsBody}
+    </div>`;
+}
+
+function renderActivityFeed(feedItems) {
+  const container = document.getElementById('activity-feed-container');
+  if (!container || !Array.isArray(feedItems)) return;
+
+  // Re-render all cards (idempotent — safe to call on every update)
+  container.innerHTML = feedItems.map(buildFeedCardHTML).join('');
+
+  // Wire inline approve/stop buttons (Prompt 80)
+  container.querySelectorAll('.feed-approve-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-id');
+      window.approveIntervention(id);
+    });
+  });
+  container.querySelectorAll('.feed-stop-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-id');
+      window.stopIntervention(id);
+    });
+  });
+
+  // Wire per-step thumbnail zoom into the shared modal
+  const modal = document.getElementById('image-modal');
+  const modalImg = document.getElementById('modal-img');
+  container.querySelectorAll('.feed-step-thumb').forEach(img => {
+    img.addEventListener('click', () => {
+      if (modal && modalImg) {
+        modalImg.src = img.getAttribute('data-src');
+        modal.style.display = 'flex';
+      }
+    });
+  });
+
+  // Auto-scroll to the last item so live updates are always visible
+  container.scrollTop = container.scrollHeight;
 }
 
 function renderPipelineArtifacts(pipelineRes) {
@@ -640,17 +792,34 @@ function renderNotificationsTab() {
   }
 }
 
-// Global Intervention Decision Functions
+// Global Intervention Decision Functions (Prompts 71 & 80)
 window.approveIntervention = async function (id) {
   const item = pendingInterventions.find((i) => i.id === id);
   if (item) {
     item.status = 'approved';
     browser.runtime.sendMessage({ type: 'APPROVE_INTERVENTION', id }).catch(() => {});
-    
+
+    // Prompt 80: Immediately update the feed card in-place (before background responds)
+    // Background will also broadcast a FEED_UPDATE, but this ensures instant UI response
+    const feedContainer = document.getElementById('activity-feed-container');
+    if (feedContainer) {
+      const card = feedContainer.querySelector(`[data-step-id*="${id}"], .feed-card.paused`);
+      if (card) {
+        card.classList.remove('paused');
+        card.classList.add('approved');
+        const inlineActions = card.querySelector('.feed-inline-actions');
+        if (inlineActions) {
+          inlineActions.innerHTML = `<div style="font-size:0.75rem;color:#4ade80;padding:4px 0;">▶️ Approved — resuming task...</div>`;
+        }
+      }
+    }
+
+    // Prompt 80: Keep notifications tab in sync
+    renderNotificationsTab();
+
+    // Switch to live view so user sees the resumed loop
     const liveViewBtn = document.querySelector('[data-tab="live-view-tab"]');
     if (liveViewBtn) liveViewBtn.click();
-    
-    renderNotificationsTab();
   }
 };
 
@@ -659,6 +828,22 @@ window.stopIntervention = async function (id) {
   if (item) {
     item.status = 'stopped';
     browser.runtime.sendMessage({ type: 'STOP_INTERVENTION', id }).catch(() => {});
+
+    // Prompt 80: Immediately update the feed card in-place
+    const feedContainer = document.getElementById('activity-feed-container');
+    if (feedContainer) {
+      const card = feedContainer.querySelector(`[data-step-id*="${id}"], .feed-card.paused`);
+      if (card) {
+        card.classList.remove('paused');
+        card.classList.add('stopped');
+        const inlineActions = card.querySelector('.feed-inline-actions');
+        if (inlineActions) {
+          inlineActions.innerHTML = `<div style="font-size:0.75rem;color:#f87171;padding:4px 0;">🛑 Stopped by user — task halted.</div>`;
+        }
+      }
+    }
+
+    // Prompt 80: Keep notifications tab in sync
     renderNotificationsTab();
     updateBadgeState('ready', 'Stopped');
   }
