@@ -143,22 +143,28 @@ flowchart TD
         ProfileUI["Local Profile<br/>Sensitive Identity Store"]
     end
 
-    subgraph Background ["background.js — Owns the Agent Loop"]
+    subgraph Background ["background.js — Owns Agent Loop"]
         Loop["Agent Loop Controller"]
         Lock["Running-State Lock"]
         NotifEngine["Notification + Badge Engine"]
     end
 
-    subgraph ContentScript ["content.js"]
-        DOMExtract["DOM + Shadow DOM Extractor"]
+    subgraph ContentScript ["content.js — Live DOM Extractor"]
+        DOMExtract["Real-Time DOM Extractor<br/>(Live values, ARIA, Shadow DOM, 100 cap)"]
         Executor["action-executor.js<br/>click / scroll / type"]
     end
 
-    subgraph Pipeline ["extension/pipeline.js"]
-        ViT["vit-classifier.js"]
-        FaceDet["face-detect.js<br/>per-mode model cache"]
-        PIIDet["pii-detector.js + ocr.js + pii-patterns.js"]
-        Redact["redaction/redact.js"]
+    subgraph Worker ["detection-worker.js — Off-Main-Thread Worker"]
+        MLPipeline["ML Engine Manager"]
+    end
+
+    subgraph Pipeline ["extension/pipeline.js & detection/"]
+        ViT["vit-classifier.js<br/>Transformers.js CLIP ViT-B/32"]
+        FastViT["vit-classifier-fast.js<br/>MobileNetV3 4MB Fast-Path"]
+        FaceDet["face-detect.js<br/>BlazeFace ONNX (WebGPU/WASM)"]
+        PIIDet["pii-detector.js<br/>Tesseract.js OCR + Regex"]
+        NERDet["ner-detector.js<br/>Xenova/bert-base-NER (Names/Places)"]
+        Redact["redaction/redact.js<br/>Canvas 2D Redactor"]
     end
 
     subgraph LocalStores ["chrome.storage.local"]
@@ -172,16 +178,10 @@ flowchart TD
         Retrieve["Similarity Scoring vs. Vault Entries"]
     end
 
-    subgraph ModelBuild ["Build-Time Tools"]
-        Quant["quantize_model.py"]
-        FastModel["face_detector_fast.onnx"]
-        BalancedModel["face_detector_balanced.onnx"]
-    end
-
     subgraph Backend ["Express Backend"]
         Server["server.js"]
-        PromptBuilder["llm-prompt.js"]
-        LLM["llm.js → Claude / Gemini API"]
+        PromptBuilder["llm-prompt.js (Rich DOM + RAG)"]
+        LLM["llm.js → Claude / Gemini / DOM Scoring Engine"]
     end
 
     LiveView -->|Run Agent| Loop
@@ -189,13 +189,15 @@ flowchart TD
     ProfileUI --> ProfileStore
     Loop --> Lock
     Loop --> DOMExtract
-    Loop --> Pipeline
+    Loop --> MLPipeline
+    MLPipeline --> ViT
+    MLPipeline --> FastViT
+    MLPipeline --> FaceDet
+    MLPipeline --> PIIDet
+    MLPipeline --> NERDet
     PIIDet --> PolicyStore
     FaceDet --> PolicyStore
-    Quant --> FastModel
-    Quant --> BalancedModel
-    FaceDet --> FastModel
-    FaceDet --> BalancedModel
+    NERDet --> PolicyStore
     Pipeline --> Redact
     Redact --> Signature
     DOMExtract --> Signature
