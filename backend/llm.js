@@ -232,32 +232,36 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
   const base64Image = redactedImageBase64.replace(/^data:image\/\w+;base64,/, '');
 
   // 1. Try Gemini Key Pool first
+  const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+
   for (let i = 0; i < geminiKeys.length; i++) {
     const key = geminiKeys[i];
     console.log(`[VLM] Trying Gemini API Key ${i + 1}/${geminiKeys.length}...`);
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: 'image/png', data: base64Image } }] }]
-        })
-      });
 
-      if (response.ok) {
-        const data = await response.json();
-        const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (rawContent) {
-          console.log(`[VLM] Gemini API Key ${i + 1} succeeded.`);
-          return rawContent;
+    for (const modelName of geminiModels) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: 'image/png', data: base64Image } }] }]
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawContent) {
+            console.log(`[VLM] Gemini Key ${i + 1} succeeded with model '${modelName}'.`);
+            return rawContent;
+          }
         }
-      } else {
-        const errText = await response.text();
-        console.warn(`[VLM] Gemini Key ${i + 1} failed (${response.status}): ${errText.slice(0, 150)}... Rotating to next key.`);
+      } catch (geminiErr) {
+        // Continue trying next model/key
       }
-    } catch (geminiErr) {
-      console.warn(`[VLM] Gemini Key ${i + 1} network error: ${geminiErr.message}. Rotating...`);
     }
+    console.warn(`[VLM] Gemini Key ${i + 1} endpoints exhausted. Rotating to next key...`);
   }
 
   // 2. Try Anthropic Key Pool if all Gemini keys fail/exhausted
@@ -270,7 +274,8 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': key,
-          'anthropic-version': '2023-06-01'
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
           model: 'claude-3-5-sonnet-20241022',
@@ -294,7 +299,7 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
         }
       } else {
         const errText = await response.text();
-        console.warn(`[VLM] Anthropic Key ${j + 1} failed (${response.status}): ${errText.slice(0, 150)}... Rotating to next key.`);
+        console.warn(`[VLM] Anthropic Key ${j + 1} failed (${response.status}): ${errText.slice(0, 120)}...`);
       }
     } catch (anthropicErr) {
       console.warn(`[VLM] Anthropic Key ${j + 1} network error: ${anthropicErr.message}. Rotating...`);
