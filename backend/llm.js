@@ -51,6 +51,150 @@ function parseVLMResponse(rawText) {
 }
 
 /**
+ * Scores a DOM element for relevance given the user's goal text.
+ * Returns a numeric score (higher = more relevant).
+ * @param {Object} el - element from domStructure
+ * @param {string} goalLower - lowercased goal string
+ * @param {string[]} goalWords - tokenized goal words
+ * @returns {number}
+ */
+function scoreDomElement(el, goalLower, goalWords) {
+  let score = 0;
+  const tag = (el.tag || '').toLowerCase();
+  const type = (el.type || '').toLowerCase();
+  const text = (el.text || el.label || el.placeholder || el.value || '').toLowerCase();
+  const id = (el.id || '').toLowerCase();
+  const name = (el.name || '').toLowerCase();
+  const role = (el.role || '').toLowerCase();
+  const autocomplete = (el.autocomplete || '').toLowerCase();
+
+  // Strongly prefer interactive elements
+  if (tag === 'button') score += 20;
+  if (tag === 'a') score += 10;
+  if (tag === 'input' && ['submit', 'button'].includes(type)) score += 20;
+  if (tag === 'input' && ['text', 'email', 'tel', 'number', 'date'].includes(type)) score += 12;
+  if (tag === 'textarea') score += 10;
+  if (tag === 'select') score += 8;
+  if (role === 'button') score += 15;
+
+  // Keyword matching: goal words found in element text/id/name
+  for (const word of goalWords) {
+    if (word.length < 3) continue;
+    if (text.includes(word)) score += 8;
+    if (id.includes(word)) score += 6;
+    if (name.includes(word)) score += 6;
+    if (autocomplete.includes(word)) score += 4;
+  }
+
+  // Submit-like signals
+  const submitWords = ['submit', 'send', 'proceed', 'continue', 'next', 'apply', 'confirm', 'go', 'lodge', 'register', 'save'];
+  for (const sw of submitWords) {
+    if (text.includes(sw)) score += 10;
+    if (id.includes(sw)) score += 8;
+    if (name.includes(sw)) score += 8;
+  }
+
+  // Fill-like signals: prefer empty inputs when goal is about filling
+  const fillWords = ['fill', 'enter', 'complete', 'type'];
+  const goalIsFill = fillWords.some(w => goalLower.includes(w));
+  if (goalIsFill && tag === 'input' && ['text', 'email', 'tel', 'number'].includes(type)) score += 5;
+
+  // Penalise hidden or unlikely elements
+  if (type === 'hidden') score -= 50;
+  if (tag === 'div' || tag === 'span') score -= 5;
+
+  return score;
+}
+
+/**
+ * Builds a CSS selector string for the given DOM element object.
+ * Prefers #id, then [name], then tag[type].
+ */
+function buildSelector(el) {
+  if (el.id) return `#${el.id}`;
+  if (el.name) return `[name="${el.name}"]`;
+  if (el.tag && el.type) return `${el.tag}[type="${el.type}"]`;
+  return el.tag || 'button';
+}
+
+/**
+ * DOM-aware simulated VLM: scores real elements from domStructure
+ * and picks the best match for the given goal. Works on ANY page —
+ * no hardcoded selectors.
+ * @param {Array<Object>} domStructure
+ * @param {string} goal
+ * @returns {string} JSON-serialised VLM decision
+ */
+function getSimulatedDecisionFromDOM(domStructure, goal) {
+  console.log('[VLM] Simulated DOM-aware engine analysing', domStructure.length, 'elements for goal:', goal);
+
+  const goalLower = (goal || '').toLowerCase();
+  const goalWords = goalLower.split(/\s+/).filter(w => w.length >= 3);
+
+  if (!domStructure || domStructure.length === 0) {
+    return JSON.stringify({
+      action: 'scroll',
+      selector: 'body',
+      reasoning: 'VLM (Simulated): No interactive elements found — scrolling to reveal more of the page.',
+      final: false,
+      confidence: 0.5
+    });
+  }
+
+  // Score every element
+  const scored = domStructure
+    .map(el => ({ el, score: scoreDomElement(el, goalLower, goalWords) }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (scored.length === 0) {
+    // Nothing useful found — scroll to load more content
+    return JSON.stringify({
+      action: 'scroll',
+      selector: 'body',
+      reasoning: 'VLM (Simulated): No matching interactive elements found. Scrolling to reveal more content.',
+      final: false,
+      confidence: 0.4
+    });
+  }
+
+  const best = scored[0].el;
+  const selector = buildSelector(best);
+  const label = best.text || best.label || best.placeholder || best.id || best.name || best.tag;
+
+  // Determine action: type for text inputs, click for everything else
+  const tag = (best.tag || '').toLowerCase();
+  const type = (best.type || '').toLowerCase();
+  const isTextInput = tag === 'input' && ['text', 'email', 'tel', 'number', 'date', 'password'].includes(type);
+  const isTextarea = tag === 'textarea';
+
+  if (isTextInput || isTextarea) {
+    const isSensitive = best.sensitive;
+    return JSON.stringify({
+      action: 'type',
+      selector,
+      value: isSensitive ? undefined : '',
+      valueSource: isSensitive ? 'name' : undefined,
+      reasoning: `VLM (Simulated): Found input field "${label}" — filling with profile value.`,
+      final: false,
+      confidence: 0.7
+    });
+  }
+
+  // Check if this looks like a final submit button
+  const submitSignals = ['submit', 'send', 'apply', 'lodge', 'register', 'confirm'];
+  const isFinalAction = submitSignals.some(w => (label || '').toLowerCase().includes(w));
+
+  return JSON.stringify({
+    action: 'click',
+    selector,
+    reasoning: `VLM (Simulated): Clicking "${label}" — best match for goal "${goal}".`,
+    final: isFinalAction,
+    confidence: scored[0].score > 30 ? 0.85 : 0.65
+  });
+}
+
+/**
  * Calls Vision-Language Model API (Gemini/Claude) with redacted screenshot and prompt.
  * @param {string} redactedImageBase64 
  * @param {string} goal 
@@ -60,85 +204,21 @@ function parseVLMResponse(rawText) {
  */
 async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedExamples = []) {
   const promptText = buildPrompt(goal, domStructure, retrievedExamples);
-  const startTime = performance.now();
 
   const apiKey = process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    console.warn('[VLM] No API key found in environment (GEMINI_API_KEY / ANTHROPIC_API_KEY). Returning simulated VLM decision.');
-    
-    // Dynamic simulated VLM decision based on available DOM elements
-    const hasStep1Btn = domStructure.some(el => el.id === 'step1-next-btn');
-    const hasStep2Btn = domStructure.some(el => el.id === 'step2-next-btn');
-    const hasStep3Btn = domStructure.some(el => el.id === 'step3-next-btn' || el.id === 'photo-id-upload');
-    const hasFinalSubmitBtn = domStructure.some(el => el.id === 'final-submit-btn');
-
-    if (hasStep1Btn) {
-      return JSON.stringify({
-        action: 'click',
-        selector: '#step1-next-btn',
-        reasoning: 'VLM (Simulated): Personal details verified. Moving to Step 2 Address details.',
-        final: false,
-        confidence: 0.95
-      });
-    }
-
-    if (hasStep2Btn) {
-      return JSON.stringify({
-        action: 'click',
-        selector: '#step2-next-btn',
-        reasoning: 'VLM (Simulated): Address details verified. Moving to Step 3 Document upload.',
-        final: false,
-        confidence: 0.95
-      });
-    }
-
-    if (hasStep3Btn) {
-      return JSON.stringify({
-        action: 'click',
-        selector: '#photo-id-upload',
-        reasoning: 'VLM (Simulated): Selecting photo ID file input for document upload.',
-        final: false,
-        confidence: 0.90
-      });
-    }
-
-    if (hasFinalSubmitBtn) {
-      return JSON.stringify({
-        action: 'click',
-        selector: '#final-submit-btn',
-        reasoning: 'VLM (Simulated): Application review complete. Submitting final passport application.',
-        final: true,
-        confidence: 0.95
-      });
-    }
-
-    return JSON.stringify({
-      action: 'click',
-      selector: '#submit-grievance-btn',
-      reasoning: 'VLM (Simulated): All form fields verified. Submitting grievance.',
-      final: true,
-      confidence: 0.95
-    });
+    console.warn('[VLM] No API key found — using DOM-aware simulated engine.');
+    return getSimulatedDecisionFromDOM(domStructure, goal);
   }
 
   try {
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
 
-    // Helper for simulated fallback decision
+    // Simulated fallback reused when cloud APIs fail
     const getSimulatedDecision = () => {
-      console.log('[VLM] Falling back to Simulated Local VLM decision engine.');
-      const hasStep1Btn = domStructure.some(el => el.id === 'step1-next-btn');
-      const hasStep2Btn = domStructure.some(el => el.id === 'step2-next-btn');
-      const hasStep3Btn = domStructure.some(el => el.id === 'step3-next-btn' || el.id === 'photo-id-upload');
-      const hasFinalSubmitBtn = domStructure.some(el => el.id === 'final-submit-btn');
-
-      if (hasStep1Btn) return JSON.stringify({ action: 'click', selector: '#step1-next-btn', reasoning: 'VLM (Fallback): Moving to Step 2.', final: false, confidence: 0.95 });
-      if (hasStep2Btn) return JSON.stringify({ action: 'click', selector: '#step2-next-btn', reasoning: 'VLM (Fallback): Moving to Step 3.', final: false, confidence: 0.95 });
-      if (hasStep3Btn) return JSON.stringify({ action: 'click', selector: '#photo-id-upload', reasoning: 'VLM (Fallback): Selecting photo upload.', final: false, confidence: 0.90 });
-      if (hasFinalSubmitBtn) return JSON.stringify({ action: 'click', selector: '#final-submit-btn', reasoning: 'VLM (Fallback): Submitting final application.', final: true, confidence: 0.95 });
-
-      return JSON.stringify({ action: 'click', selector: '#submit-grievance-btn', reasoning: 'VLM (Fallback): Submitting form.', final: true, confidence: 0.95 });
+      console.log('[VLM] Cloud APIs exhausted — falling back to DOM-aware simulated engine.');
+      return getSimulatedDecisionFromDOM(domStructure, goal);
     };
 
     if (anthropicKey) {
