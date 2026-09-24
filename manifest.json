@@ -28,10 +28,23 @@
       ],
       "js": [
         "extension/browser-polyfill.js",
+        "extension/local-profile.js",
         "extension/action-executor.js",
         "content.js"
       ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "extension/models/*.onnx",
+        "extension/models/*.bin",
+        "*.wasm",
+        "ort-wasm*.wasm",
+        "ort-wasm*.js"
+      ],
+      "matches": ["<all_urls>"]
     }
   ]
 }

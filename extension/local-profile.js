@@ -46,12 +46,32 @@ async function getProfile() {
  * @returns {Promise<string|null>}
  */
 async function getProfileValue(key) {
-  if (!PROFILE_FIELD_KEYS.includes(key)) {
-    console.warn(`[LocalProfile] Unknown profile key requested: "${key}"`);
+  if (!key) return null;
+
+  // Key normalizer / alias map for VLM variations
+  const normalizeKey = (inputKey) => {
+    const k = String(inputKey).trim().toLowerCase().replace(/[-_]/g, '');
+    if (['fullname', 'name', 'personname', 'givenname', 'surname'].includes(k)) return 'fullName';
+    if (['email', 'emailaddress', 'mail'].includes(k)) return 'email';
+    if (['phone', 'phonenumber', 'mobile', 'cell', 'tel'].includes(k)) return 'phone';
+    if (['aadhaar', 'aadhaarnumber', 'uid'].includes(k)) return 'aadhaar';
+    if (['pan', 'pannumber'].includes(k)) return 'pan';
+    if (['passport', 'passportnumber'].includes(k)) return 'passport';
+    if (['address', 'street', 'city'].includes(k)) return 'address';
+    if (['pincode', 'pin', 'zip', 'zipcode', 'postalcode'].includes(k)) return 'pinCode';
+    if (['dateofbirth', 'dob', 'birthdate', 'birth'].includes(k)) return 'dateOfBirth';
+    if (['bankaccount', 'accountnumber', 'ifsc', 'bank'].includes(k)) return 'bankAccount';
+    return inputKey;
+  };
+
+  const canonKey = normalizeKey(key);
+
+  if (!PROFILE_FIELD_KEYS.includes(canonKey)) {
+    console.warn(`[LocalProfile] Unknown profile key requested: "${key}" (normalized: "${canonKey}")`);
     return null;
   }
   const profile = await getProfile();
-  return profile[key] != null ? String(profile[key]) : null;
+  return profile[canonKey] != null && String(profile[canonKey]).trim() !== '' ? String(profile[canonKey]).trim() : null;
 }
 
 /**
