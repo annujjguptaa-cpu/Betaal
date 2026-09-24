@@ -1,37 +1,72 @@
-/* backend/llm-prompt.js — Prompts 83 & 88
+/* backend/llm-prompt.js
  *
- * Builds the VLM instruction prompt.
- * Prompt 83: valueSource schema for sensitive fields.
- * Prompt 88: Incorporates RAG retrievedExamples precedent section if non-empty.
+ * Builds the VLM instruction prompt with full rich DOM context:
+ * live field values, aria attributes, roles, option lists, href,
+ * disabled/required state, focus state — everything the VLM needs
+ * to make intelligent decisions on ANY real-world page.
  */
 
 /**
+ * Formats a single DOM element into a compact, information-rich descriptor line.
+ * @param {Object} item
+ * @param {number} idx
+ * @returns {string}
+ */
+function formatDomElement(item, idx) {
+  const tag    = item.tag || 'element';
+  const type   = item.type ? `[${item.type}]` : '';
+  const parts  = [];
+
+  if (item.id)           parts.push(`id="${item.id}"`);
+  if (item.name)         parts.push(`name="${item.name}"`);
+  if (item.ariaLabel)    parts.push(`aria-label="${item.ariaLabel}"`);
+  if (item.placeholder)  parts.push(`placeholder="${item.placeholder}"`);
+  if (item.text)         parts.push(`text="${item.text.slice(0, 80)}"`);
+  if (item.liveValue)    parts.push(`currentValue="${item.liveValue.slice(0, 60)}"`);
+  if (item.href)         parts.push(`href="${item.href.slice(0, 80)}"`);
+  if (item.role)         parts.push(`role="${item.role}"`);
+  if (item.autocomplete) parts.push(`autocomplete="${item.autocomplete}"`);
+  if (item.dataTestId)   parts.push(`data-testid="${item.dataTestId}"`);
+  if (item.isRequired)   parts.push('required');
+  if (item.isDisabled)   parts.push('disabled');
+  if (item.isFocused)    parts.push('FOCUSED');
+
+  // For <select>: show choices
+  if (item.options && item.options.length > 0) {
+    const opts = item.options.slice(0, 8).map(o => o.text || o.value).join(' | ');
+    parts.push(`options=[${opts}]`);
+  }
+
+  const sensitiveTag = item.sensitive ? ' [SENSITIVE]' : '';
+  const attrStr = parts.length > 0 ? ` { ${parts.join(', ')} }` : '';
+
+  return `${idx + 1}. <${tag}${type}>${attrStr}${sensitiveTag}`;
+}
+
+/**
  * Builds the vision-language model instruction prompt.
- * @param {string} goal 
- * @param {Array<Object>} domStructure 
- * @param {Array<Object>} [retrievedExamples=[]] - Prompt 88: Array of RAG precedents from Vault
+ * @param {string} goal
+ * @param {Array<Object>} domStructure  - Real-time DOM from content.js
+ * @param {Array<Object>} [retrievedExamples=[]] - RAG precedents from Vault
  * @returns {string} Formatted VLM prompt text
  */
 function buildPrompt(goal, domStructure = [], retrievedExamples = []) {
-  const domListFormatted = Array.isArray(domStructure)
-    ? domStructure.map((item, idx) => {
-        const sensitiveTag = item.sensitive ? ' [SENSITIVE]' : '';
-        return `${idx + 1}. [${item.tag || 'element'}] ID: "${item.id || ''}", Class: "${item.className || ''}", Text/Placeholder: "${item.text || item.placeholder || ''}"${sensitiveTag}`;
-      }).join('\n')
-    : 'No structural field data provided.';
+  const domListFormatted = Array.isArray(domStructure) && domStructure.length > 0
+    ? domStructure.map((item, idx) => formatDomElement(item, idx)).join('\n')
+    : 'No interactive elements found on page.';
 
-  // Known local-profile keys for Prompt 83 valueSource rules
+  // Profile keys for valueSource on sensitive fields
   const profileKeys = [
     'fullName', 'email', 'phone', 'aadhaar', 'pan',
     'passport', 'address', 'pinCode', 'dateOfBirth', 'bankAccount'
   ].join(' | ');
 
-  // Prompt 88: Format retrieved structural examples if non-empty
+  // RAG precedent section
   let ragPrecedentSection = '';
   if (Array.isArray(retrievedExamples) && retrievedExamples.length > 0) {
     const formattedExamples = retrievedExamples.map((ex, idx) => {
-      const typesStr = (ex.fieldTypes || []).join(', ') || 'general';
-      const btnsStr = (ex.buttonLabels || []).join(', ') || 'none';
+      const typesStr   = (ex.fieldTypes   || []).join(', ')  || 'general';
+      const btnsStr    = (ex.buttonLabels || []).join(', ')  || 'none';
       const actionsStr = (ex.actionsTaken || []).join(' -> ') || 'completed form';
       return `Example ${idx + 1}: Field Types: [${typesStr}] | Buttons: [${btnsStr}] | Successful Actions: ${actionsStr}`;
     }).join('\n');
@@ -39,33 +74,42 @@ function buildPrompt(goal, domStructure = [], retrievedExamples = []) {
     ragPrecedentSection = `
 For reference, here are structurally similar pages this agent has successfully handled before:
 ${formattedExamples}
-Use these as helpful precedent, but base your decision on the ACTUAL current page structure provided above, not on assumption.
+Use these as helpful precedent, but base your decision on the ACTUAL current page structure provided above.
 `;
   }
 
-  return `You are looking at a screenshot where sensitive information has been redacted — solid black rectangles indicate hidden personal data (numbers, IDs, addresses), and pixelated/blocky regions indicate hidden faces. Do not attempt to guess what's underneath. Given the user's goal and this redacted view plus the following structural field data:
+  return `You are an autonomous form-filling agent looking at a screenshot of a live web page.
+Sensitive information has been redacted: solid black boxes = PII text, pixelated regions = faces.
+Do NOT guess what is hidden. Act only on what you can see and the DOM structure below.
+
+=== LIVE PAGE DOM (${domStructure.length} interactive elements) ===
 ${domListFormatted}
 
-User Goal: "${goal}"
+=== USER GOAL ===
+"${goal}"
 ${ragPrecedentSection}
-Determine the single next UI action needed to accomplish or progress toward the goal.
+=== YOUR TASK ===
+Determine the SINGLE next UI action to make progress toward the goal.
+- Prefer filling empty required fields before clicking submit buttons.
+- If a field has a currentValue already set, skip it and move to the next empty field.
+- Use the EXACT selector from the DOM list above (prefer #id over [name=...] over tag[type=...]).
+- If the page has no relevant elements, use {"action":"scroll","selector":"body"} to reveal more.
 
-IMPORTANT — VALUE SOURCING RULES:
-- For a "type" action targeting a field marked [SENSITIVE] in the DOM list above, you MUST return "value": null and "valueSource": "<key>" where <key> is the most appropriate key from this list: ${profileKeys}
-  The executor will resolve the real value locally — it must never appear in your response.
-- For a "type" action targeting a NON-sensitive field (e.g. a search box, comment, quantity), return the literal value as "value": "<text>" and omit "valueSource".
+=== VALUE SOURCING RULES ===
+- For "type" on a [SENSITIVE] field: return "value": null and "valueSource": "<key>" from [${profileKeys}]. The executor resolves it locally — never put real PII in your response.
+- For "type" on a NON-sensitive field (search box, comment, quantity, message): return "value": "<text>".
 
-Respond ONLY with valid JSON matching exactly this schema:
+=== RESPONSE FORMAT ===
+Respond ONLY with a single valid JSON object — no markdown fences, no extra text:
 {
   "action": "click" | "scroll" | "type",
-  "selector": "CSS selector string",
+  "selector": "CSS selector exactly matching an element from the DOM list",
   "value": string or null,
-  "valueSource": one of [${profileKeys}] — ONLY present for sensitive type actions, omit otherwise,
-  "reasoning": "brief explanation",
-  "final": boolean (true if this completes the task or submits a final form, false otherwise),
-  "confidence": number between 0.0 and 1.0 (indicating confidence in this action choice)
-}
-Do not include markdown code fences or any text outside the JSON object.`;
+  "valueSource": one of [${profileKeys}] — ONLY for sensitive type actions,
+  "reasoning": "brief explanation of why this action and element",
+  "final": true if this action submits the form or completes the task, false otherwise,
+  "confidence": number 0.0–1.0
+}`;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
