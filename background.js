@@ -773,16 +773,12 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
           
           const correctionGoal = `${agentLoopState.goal}\n\nThe selector [${actionResponse.selector}] does not exist on this page. Available elements:\n${JSON.stringify(domStructure)}\nChoose a selector ONLY from this list.`;
           
-          const retryBackend = await fetch(`${BACKEND_URL}/act`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              goal: correctionGoal,
-              redactedImage: payloadImage,
-              domStructure
-            })
+          const retryBackendRes = await sendToBackend({
+            goal: correctionGoal,
+            redactedImage: payloadImage,
+            domStructure
           });
-          actionResponse = await retryBackend.json();
+          actionResponse = retryBackendRes;
         } else {
           throw new Error("I couldn't find the right element on this page, please complete this step manually.");
         }
