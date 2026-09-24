@@ -49,8 +49,33 @@ async function detectSensitivePII(imageDataUrl, domStructure = []) {
     // 2. OCR Text Region Inspection
     const regions = await extractFn(imageDataUrl);
     if (Array.isArray(regions) && regions.length > 0) {
+      const fullText = regions.map(r => r.text).join(' ');
+      
+      // Run BERT-NER entity recognition on the combined page text
+      let nerEntities = [];
+      if (typeof detectNamedEntities !== 'undefined') {
+        nerEntities = await detectNamedEntities(fullText);
+      } else {
+        try {
+          const nerModule = await import('./ner-detector.js');
+          nerEntities = await nerModule.detectNamedEntities(fullText);
+        } catch (e) {}
+      }
+
       for (const region of regions) {
-        const type = classifyFn(region.text);
+        let type = classifyFn(region.text);
+
+        // If regex didn't catch it, check if BERT-NER identified this word as a Person or Location
+        if (!type && nerEntities.length > 0) {
+          const matchedEntity = nerEntities.find(e => 
+            e.word.toLowerCase() === region.text.toLowerCase() ||
+            region.text.toLowerCase().includes(e.word.toLowerCase())
+          );
+          if (matchedEntity) {
+            type = matchedEntity.type;
+          }
+        }
+
         if (type !== null) {
           // Avoid duplicate bounding box if DOM already caught it
           const exists = detected.some(d => Math.abs(d.boundingBox.x - region.boundingBox.x) < 30 && Math.abs(d.boundingBox.y - region.boundingBox.y) < 30);

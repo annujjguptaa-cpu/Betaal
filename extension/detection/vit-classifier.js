@@ -143,6 +143,22 @@ function heuristicCategory(optionalContext) {
  */
 async function classifyScreenType(imageDataUrl, optionalContext = {}) {
   const startTime = performance.now();
+  const useFastMode = optionalContext.performanceMode === 'fast' || optionalContext.useLightModel;
+
+  if (useFastMode) {
+    try {
+      let fastFn;
+      if (typeof classifyScreenTypeFast !== 'undefined') {
+        fastFn = classifyScreenTypeFast;
+      } else {
+        const fastModule = await import('./vit-classifier-fast.js');
+        fastFn = fastModule.classifyScreenTypeFast;
+      }
+      return await fastFn(imageDataUrl, optionalContext);
+    } catch (e) {
+      console.warn('[classifyScreenType] Fast mode import failed, continuing with standard pipeline.');
+    }
+  }
 
   // ------------------------------------------------------------------
   // Attempt 1: CLIP zero-shot inference

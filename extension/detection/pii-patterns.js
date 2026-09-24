@@ -32,7 +32,6 @@ function classifyPII(text) {
   // Generic fallback pattern: 9+ digits (optionally spaced/dashed)
   // Check currency formatting or decimal point guards first
   if (/[₹$\u20B9]|\./.test(trimmed)) {
-    // If text contains currency symbols or decimal points (e.g. product price '199999.00' or '₹199999'), exclude
     return null;
   }
 
