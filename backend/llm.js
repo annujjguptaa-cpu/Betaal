@@ -195,7 +195,23 @@ function getSimulatedDecisionFromDOM(domStructure, goal) {
 }
 
 /**
+ * Helper to parse comma-separated API keys from environment variable or single key fallback.
+ * @param {string} envVarValue 
+ * @returns {string[]}
+ */
+function parseKeyPool(envVarValue) {
+  if (!envVarValue || typeof envVarValue !== 'string') return [];
+  return envVarValue
+    .split(',')
+    .map(k => k.trim())
+    .filter(k => k.length > 0);
+}
+
+/**
  * Calls Vision-Language Model API (Gemini/Claude) with redacted screenshot and prompt.
+ * Supports API Key Pooling & Fallover: rotates through all Gemini keys first,
+ * then all Anthropic keys, before resorting to local DOM-aware fallback.
+ *
  * @param {string} redactedImageBase64 
  * @param {string} goal 
  * @param {Array<Object>} domStructure 
@@ -205,88 +221,89 @@ function getSimulatedDecisionFromDOM(domStructure, goal) {
 async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedExamples = []) {
   const promptText = buildPrompt(goal, domStructure, retrievedExamples);
 
-  const apiKey = process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    console.warn('[VLM] No API key found — using DOM-aware simulated engine.');
+  const geminiKeys = parseKeyPool(process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY);
+  const anthropicKeys = parseKeyPool(process.env.ANTHROPIC_API_KEYS || process.env.ANTHROPIC_API_KEY);
+
+  if (geminiKeys.length === 0 && anthropicKeys.length === 0) {
+    console.warn('[VLM] No API keys found — using DOM-aware simulated engine.');
     return getSimulatedDecisionFromDOM(domStructure, goal);
   }
 
-  try {
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY;
+  const base64Image = redactedImageBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    // Simulated fallback reused when cloud APIs fail
-    const getSimulatedDecision = () => {
-      console.log('[VLM] Cloud APIs exhausted — falling back to DOM-aware simulated engine.');
-      return getSimulatedDecisionFromDOM(domStructure, goal);
-    };
+  // 1. Try Gemini Key Pool first
+  for (let i = 0; i < geminiKeys.length; i++) {
+    const key = geminiKeys[i];
+    console.log(`[VLM] Trying Gemini API Key ${i + 1}/${geminiKeys.length}...`);
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: 'image/png', data: base64Image } }] }]
+        })
+      });
 
-    if (anthropicKey) {
-      console.log('[VLM] Calling Anthropic Claude VLM API...');
-      try {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': anthropicKey,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify({
-            model: 'claude-3-5-sonnet-20241022',
-            max_tokens: 1024,
-            messages: [{
-              role: 'user',
-              content: [
-                { type: 'image', source: { type: 'base64', media_type: 'image/png', data: redactedImageBase64.replace(/^data:image\/\w+;base64,/, '') } },
-                { type: 'text', text: promptText }
-              ]
-            }]
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const rawContent = data.content?.[0]?.text;
-          if (rawContent) return rawContent;
-        } else {
-          const errText = await response.text();
-          console.warn(`[VLM] Anthropic API error (${response.status}): ${errText}. Attempting fallback...`);
+      if (response.ok) {
+        const data = await response.json();
+        const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawContent) {
+          console.log(`[VLM] Gemini API Key ${i + 1} succeeded.`);
+          return rawContent;
         }
-      } catch (anthropicErr) {
-        console.warn(`[VLM] Anthropic fetch error: ${anthropicErr.message}. Attempting fallback...`);
+      } else {
+        const errText = await response.text();
+        console.warn(`[VLM] Gemini Key ${i + 1} failed (${response.status}): ${errText.slice(0, 150)}... Rotating to next key.`);
       }
+    } catch (geminiErr) {
+      console.warn(`[VLM] Gemini Key ${i + 1} network error: ${geminiErr.message}. Rotating...`);
     }
-
-    if (geminiKey) {
-      console.log('[VLM] Calling Gemini VLM API...');
-      try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: 'image/png', data: redactedImageBase64.replace(/^data:image\/\w+;base64,/, '') } }] }]
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (rawContent) return rawContent;
-        } else {
-          console.warn(`[VLM] Gemini API error (${response.status}). Attempting fallback...`);
-        }
-      } catch (geminiErr) {
-        console.warn(`[VLM] Gemini fetch error: ${geminiErr.message}. Attempting fallback...`);
-      }
-    }
-
-    // Fallback if cloud keys fail or are out of credit
-    return getSimulatedDecision();
-
-  } catch (error) {
-    console.error('[VLM Call Failed]:', error.message);
-    throw new Error(`VLM API call failed: ${error.message}`);
   }
+
+  // 2. Try Anthropic Key Pool if all Gemini keys fail/exhausted
+  for (let j = 0; j < anthropicKeys.length; j++) {
+    const key = anthropicKeys[j];
+    console.log(`[VLM] Trying Anthropic Claude API Key ${j + 1}/${anthropicKeys.length}...`);
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-sonnet-20241022',
+          max_tokens: 1024,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: 'image/png', data: base64Image } },
+              { type: 'text', text: promptText }
+            ]
+          }]
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const rawContent = data.content?.[0]?.text;
+        if (rawContent) {
+          console.log(`[VLM] Anthropic API Key ${j + 1} succeeded.`);
+          return rawContent;
+        }
+      } else {
+        const errText = await response.text();
+        console.warn(`[VLM] Anthropic Key ${j + 1} failed (${response.status}): ${errText.slice(0, 150)}... Rotating to next key.`);
+      }
+    } catch (anthropicErr) {
+      console.warn(`[VLM] Anthropic Key ${j + 1} network error: ${anthropicErr.message}. Rotating...`);
+    }
+  }
+
+  // 3. Final Fallback to DOM-aware simulated engine if all keys exhausted
+  console.warn('[VLM] All Gemini and Anthropic API keys exhausted or failed — falling back to local DOM-aware simulated engine.');
+  return getSimulatedDecisionFromDOM(domStructure, goal);
 }
 
 module.exports = { buildPrompt, callVLM, parseVLMResponse };
