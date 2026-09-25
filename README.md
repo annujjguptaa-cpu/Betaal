@@ -125,6 +125,20 @@ To return to Chrome/Edge: `git checkout manifest.json`. See `docs/firefox-build.
 
 ## 🛠️ Detailed Tech Stack Breakdown
 
+### 🔤 Programming & Scripting Languages
+
+| Language | Primary Usage & Scope | Execution Environment |
+| :--- | :--- | :--- |
+| **JavaScript (ES6+)** | Extension core engine, service workers (`background.js`), DOM manipulation, Web Workers, canvas manipulation, and Express backend API | Chrome / Edge / Firefox Runtimes, Web Workers, & Node.js Server |
+| **HTML5** | Extension popup interface UI structure (`popup.html`), test demo pages, and web page markup extraction | Extension Popup & Browser DOM |
+| **CSS3** | Extension popup styling, dark mode UI theme, live badge counters, and Shadow DOM injected overlays | Browser Rendering Engine |
+| **WebAssembly (WASM)** | Near-native execution of ONNX tensor models (BlazeFace, ViT, BERT-NER) and Tesseract OCR engine | Client Browser WebAssembly Sandbox |
+| **WebGPU Shading Language (WGSL)** | Hardware-accelerated GPU compute pipelines for high-throughput tensor vision inference | Client WebGPU Engine |
+
+---
+
+### 🧰 Technologies, Frameworks & Libraries
+
 | Layer / Category | Technology / Library | Purpose & Functional Role | Execution Context |
 | :--- | :--- | :--- | :--- |
 | **Frontend & UI** | **Manifest V3 Extension API** | Extension architecture, background service worker (`background.js`), content scripts, popup window | Chrome / Edge / Firefox Extension |
