@@ -123,6 +123,30 @@ To return to Chrome/Edge: `git checkout manifest.json`. See `docs/firefox-build.
 
 ---
 
+## 🛠️ Detailed Tech Stack Breakdown
+
+| Layer / Category | Technology / Library | Purpose & Functional Role | Execution Context |
+| :--- | :--- | :--- | :--- |
+| **Frontend & UI** | **Manifest V3 Extension API** | Extension architecture, background service worker (`background.js`), content scripts, popup window | Chrome / Edge / Firefox Extension |
+| | **HTML5 & CSS3** | 5-tab popup interface (Live View, Vault, Notifications, Policy, Profile) with real-time telemetry feed | Popup Window (`popup.html`) |
+| | **HTML5 Canvas 2D API** | On-device visual sanitization: solid black-fill over PII text regions and block-pixelation over detected faces | Client-Side (`redaction/redact.js`) |
+| | **Shadow DOM API** | Isolated, host-style-proof containers for Set-of-Marks (SoM) bounding box overlays and animated Agent Cursor | Live Webpage DOM Injection |
+| **On-Device ML Models** | **BlazeFace ONNX** (`230KB`) | Real-time human face & biometric detection model running hardware-accelerated tensor inference | Client WebGPU / WASM (`face-detect.js`) |
+| | **CLIP ViT-B/32** (`Transformers.js`) | Vision Transformer (`Xenova/clip-vit-base-patch32`) for zero-shot screen classification (`form-with-pii`, `video-tile`) | Client WebGPU / WASM (`vit-classifier.js`) |
+| | **MobileNetV3 Fast-Path** (`4MB`) | Quantized lightweight ONNX screen classifier for instant (<5ms) low-resource performance mode execution | Client WebGPU / WASM (`vit-classifier-fast.js`) |
+| | **BERT-NER** (`Xenova/bert-base-NER`) | Token-classification NLP model for extracting free-text Named Entities (Person Names, Locations, Organizations) | Client WebAssembly (`ner-detector.js`) |
+| | **Tesseract.js WASM** | Optical Character Recognition (OCR) engine extracting text and word bounding coordinates from screenshot pixels | Client WebAssembly (`ocr.js`) |
+| | **Regex Pattern Matcher** | Pattern matcher for structured Indian & global PII (Aadhaar, PAN, Phone, Email, generic 9+ digit IDs) | Client JS (`pii-patterns.js`) |
+| **Client Core & State** | **Web Worker Engine** | Dedicated worker thread (`detection-worker.js`) executing vision/NLP ML off the main UI thread to prevent browser jank | Off-Main-Thread Web Worker |
+| | **`chrome.storage.local`** | On-device persistent storage for Local Profile (`valueSource`), Vault history, and editable Policy Book rules | Browser Local Storage |
+| | **`browser-polyfill.js`** | Unified promise-based cross-browser API wrapper enabling identical code execution on Chrome, Edge, and Firefox | Web Extension Polyfill |
+| **Backend & Cloud AI** | **Node.js & Express.js** | Zero-persistence proxy server routing sanitized payloads, enforcing CORS, and managing rate-limiting (20 req/hr/IP) | Cloud Hosted (Render / Local) |
+| | **Google Gemini VLM** | Primary cloud reasoning model (`gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-1.5-flash`) for multi-step UI decisions | Cloud API Gateway (`backend/llm.js`) |
+| | **Anthropic Claude VLM** | Fallback cloud vision model (`claude-3-5-sonnet-20241022`) for complex structural reasoning | Cloud API Gateway (`backend/llm.js`) |
+| | **DOM Scoring Fallback Engine** | Local structural element scoring algorithm providing zero-API-key offline execution capabilities | Backend / Standalone Node.js |
+
+---
+
 ## 📊 How Betaal Functions (System Flowcharts)
 
 ### 1. Simplified System Flowchart (High-Level Overview)
