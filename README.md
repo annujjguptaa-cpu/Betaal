@@ -123,7 +123,21 @@ To return to Chrome/Edge: `git checkout manifest.json`. See `docs/firefox-build.
 
 ---
 
-## 📊 How Betaal Functions (Full System Flowchart)
+## 📊 How Betaal Functions (System Flowcharts)
+
+### 1. Simplified System Flowchart (High-Level Overview / Presentation Slide)
+
+```mermaid
+flowchart LR
+    A[User Goal Input] --> B[Capture Screen & DOM]
+    B --> C["🔒 On-Device Privacy Pipeline<br/>(CLIP ViT + BlazeFace + BERT-NER + OCR)"]
+    C --> D["🎨 Canvas Redactor<br/>(Blackfill PII | Pixelate Faces)"]
+    D -->|Sanitized Image + DOM| E["☁️ Cloud VLM Server<br/>(Gemini / Claude / DOM Engine)"]
+    E -->|UI Action: click / type| F["⚡ On-Device Action Execution<br/>(Local valueSource Resolution)"]
+    F -->|Next Step| B
+```
+
+### 2. Full System Flowchart (Detailed Execution Loop)
 
 ```mermaid
 flowchart TD
@@ -184,7 +198,40 @@ flowchart TD
     AG --> AH[Task Complete 🎉]
 ```
 
-### System Architecture Diagram
+---
+
+## 🏗️ System Architecture Diagrams
+
+### 1. Simplified System Architecture Diagram (PPT / Slide Presentation Format)
+
+```mermaid
+flowchart LR
+    subgraph Client["🔒 Client-Side Browser Extension — Manifest V3"]
+        direction TB
+        DOM["🌐 Real-Time DOM Engine<br/>captures live values, ARIA, shadow DOM"]
+        
+        subgraph ML["⚡ Web Worker ML Engine"]
+            BlazeFace["BlazeFace ONNX<br/>face detection via WebGPU/WASM"]
+            ViT["CLIP ViT-B/32 & MobileNet<br/>zero-shot screen classification"]
+            NER["BERT-NER (Xenova)<br/>names & location extraction"]
+            OCR["Tesseract.js WASM + Regex<br/>OCR & PII pattern detection"]
+        end
+        
+        Redact["🎨 Canvas Redactor<br/>black-fill PII, pixelate faces"]
+        Store["🔑 Local Profile & Vault<br/>valueSource identity protection"]
+    end
+
+    subgraph Server["☁️ Backend Server — Zero Persistence"]
+        direction TB
+        Prompt["Prompt Builder<br/>RAG-grounded with Vault precedents"]
+        VLM["Claude / Gemini / DOM Scoring<br/>cloud reasoning over sanitized data"]
+    end
+
+    Client -- "Sanitized Screenshot + Anonymized DOM" --> Server
+    Server -- "UI Action: click / scroll / type" --> Client
+```
+
+### 2. Full Detailed System Architecture Diagram
 
 ```mermaid
 flowchart TD
