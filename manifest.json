@@ -28,6 +28,7 @@
       ],
       "js": [
         "extension/browser-polyfill.js",
+        "extension/som-overlay.js",
         "extension/agent-cursor.js",
         "extension/local-profile.js",
         "extension/action-executor.js",

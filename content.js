@@ -247,7 +247,25 @@ if (browserApi && browserApi.runtime && browserApi.runtime.onMessage) {
       }
 
       if (message.type === 'GET_DOM_STRUCTURE') {
-        return { success: true, domStructure: getDOMStructure() };
+        const domStructure = getDOMStructure();
+        if (typeof renderSomOverlay === 'function') {
+          renderSomOverlay(domStructure, null, 2500);
+        }
+        return { success: true, domStructure };
+      }
+
+      if (message.type === 'RENDER_SOM_OVERLAY') {
+        if (typeof renderSomOverlay === 'function') {
+          renderSomOverlay(message.domStructure || getDOMStructure(), message.chosenSelector, message.displayMs || 2500);
+        }
+        return { success: true };
+      }
+
+      if (message.type === 'CLEAR_SOM_OVERLAY') {
+        if (typeof clearSomOverlay === 'function') {
+          clearSomOverlay();
+        }
+        return { success: true };
       }
 
       if (message.type === 'EXECUTE_ACTION') {

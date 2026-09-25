@@ -24,6 +24,11 @@ async function executeAction(action) {
     };
   }
 
+  // Trigger SoM Visual Overlay highlighting chosen element in green (#22c55e)
+  if (typeof renderSomOverlay === 'function') {
+    renderSomOverlay(typeof getDOMStructure === 'function' ? getDOMStructure() : [], action.selector, 2500);
+  }
+
   // Smoothly animate Agent Cursor to the target element coordinates
   const rect = el.getBoundingClientRect();
   const targetX = rect.left + rect.width / 2;
