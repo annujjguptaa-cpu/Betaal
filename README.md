@@ -360,8 +360,49 @@ npm start
 
 > For Firefox setup, see the [How to Prepare Betaal for Firefox](#-how-to-prepare-betaal-for-firefox) section above.
 
+## 🎯 Judging Criteria Alignment
+
+| Metric | Weight | Our Approach | Key Features & Measured Real Data |
+| :--- | :--- | :--- | :--- |
+| **Accuracy of Visual Context** | **25%** | Real-time DOM Extraction + Tesseract OCR | Captures 100 interactive elements with live typed values, ARIA labels, roles, and shadow DOM. Visual grounding backed by CLIP ViT-B/32 zero-shot classification. |
+| **PII Detection Recall/Precision** | **20%** | Multi-Layer Detection (Regex + BERT-NER) | Regex handles Aadhaar, PAN, phone, email, and generic 9+ digit IDs. `Xenova/bert-base-NER` token classification catches person names, locations, and orgs in free text. |
+| **Precision of Redaction** | **20%** | Canvas 2D Policy-Aware Redaction | Bounding-box exact canvas redactor (blackfill PII text, block pixelate faces). Zero sensitive pixels touch the network. |
+| **Client-Side Resource Utilization** | **20%** | Web Workers + Quantized Models + Memory Budget | Heavy ML runs off-main-thread via Web Workers (`detection-worker.js`). Total extension RAM measured at `423.2 MB` (Avg of 3 runs, within 500 MB hard cap). Fast mode MobileNet footprint is ~4MB. |
+| **End-to-End Latency** | **15%** | Performance Modes + Local RAG Grounding | Switchable Fast / Balanced / Accurate modes. Measured demo page pipeline: `2640 ms` total per iteration (including 300ms pacing delay & cloud VLM round-trip). |
+
+---
+
+## ✅ Must-Haves Checklist
+
+- [x] **Cross-Browser Compatibility**: Runs natively on Chrome, Edge, and Firefox (Manifest V3 + `browser-polyfill.js`).
+- [x] **Client-Side Local Vision**: BlazeFace ONNX, CLIP ViT-B/32, BERT-NER, and Tesseract OCR run 100% on-device (WebGPU/WASM).
+- [x] **Pre-Network PII Redaction**: Sensitive visual regions and face biometrics are masked on HTML5 canvas *before* POST requests fire.
+- [x] **Sanitized Server Payload**: Server receives only redacted image base64, anonymized DOM structure, and `valueSource` key aliases.
+- [x] **End-to-End Autonomous Task Execution**: Complete multi-page workflow demonstrated (Form Navigation $\rightarrow$ Data Input $\rightarrow$ Final Submission).
+- [x] **Tamper-Evident Audit Trail**: Durable Vault logs every run outcome, detection counts, and policy snapshots locally in `chrome.storage.local`.
+
+---
+
+## 🛡️ Risk Mitigation Strategy
+
+| Risk | Mitigation Strategy | Implementation |
+| :--- | :--- | :--- |
+| **Selector Fragility / Dynamic DOM Changes** | Pre-action validation + Self-Correction Retry | Re-validates selector presence in `content.js` immediately before execution. Re-prompts VLM up to 2 times with fresh DOM if missing (`background.js`). |
+| **Bot Detection & Rate Limiting** | Human-like Pacing & Red Highlight Pointer | Adds deliberate pacing delay (300ms) + smooth animated Agent Cursor gliding to element coordinates (`agent-cursor.js`). |
+| **Trust in Autonomous Decisions** | Mandatory Human-in-the-Loop Interventions | Automatically pauses execution on final/irreversible actions, low confidence (<0.6), file inputs, or repeated failures (`intervention-rules.js`). |
+| **Latency vs. Accuracy Tradeoff** | Switchable Performance Modes | User can switch between `Fast` (MobileNet 4MB / 5ms), `Balanced` (Default ONNX / 45ms), and `Accurate` (1.5x upscaling) at runtime. |
+
+---
+
+## 🎬 Demo Strategy & Live Verification
+
+For judging demonstrations, refer to our full documentation guides:
+* **Adversarial Live Verification**: Have a judge type a fake sensitive value (e.g. Aadhaar or Phone) into a live form field. Watch Betaal detect the text, classify it via regex/BERT-NER, and draw a solid blackfill overlay *before* any HTTP request leaves the browser. See [docs/demo-script.md](docs/demo-script.md).
+* **Offline Client-Side Execution**: Disconnect network connection mid-run. Verify that screen classification, OCR, face detection, and canvas redaction continue running 100% locally on-device. See [docs/kill-switch-demo.md](docs/kill-switch-demo.md).
+
 ---
 
 ## 📄 License
 
 ISC License
+
