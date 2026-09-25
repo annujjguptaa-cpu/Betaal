@@ -22,6 +22,8 @@
 | **Disha Yadav** | [`@dishayadav15160-cyber`](https://github.com/dishayadav15160-cyber) | **Backend & API Systems Engineer** (Express Gateway, DOM Extractor & Rate-Limiting Subsystems) |
 | **Pragati** | [`@jainpragatii`](https://github.com/jainpragatii) | **QA & Benchmarking Specialist** (Autonomous CDP Profiling Scripts, Latency/Memory Budgets & Verification) |
 
+> 📌 **Note on Repository Commit History**: All team members developed their respective modules locally and shared their code into the central project repository. Commits were integrated and pushed via Team Lead Anuj Gupta's GitHub account (`@annujjguptaa-cpu`), which is why individual team member handles may not reflect on the GitHub contributor graph despite their direct code contributions.
+
 ---
 
 ## 📸 See It Work (Live Interface Showcase)
