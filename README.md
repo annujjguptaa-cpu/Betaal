@@ -28,139 +28,6 @@ Betaal is a cross-browser extension (Chrome, Firefox & Edge, Manifest V3) that e
 
 ---
 
-## 👥 Team Roster
-
-| Member | GitHub Username | Role & Contributions |
-| :--- | :--- | :--- |
-| **Anuj Gupta** | [`@annujjguptaa-cpu`](https://github.com/annujjguptaa-cpu) | **Team Lead & Core Architect** (Browser Agent Loop, RAG Vault Engine, Multi-VLM Key Pooling & System Design) |
-| **Anjali Singh** | [`@Anjali-byte04`](https://github.com/Anjali-byte04) | **Lead AI/ML Engineer** (On-Device Vision Models: BlazeFace ONNX, CLIP ViT-B/32, BERT-NER & Web Workers) |
-| **Kumar Nishkarsh** | [`@Nishkrx`](https://github.com/Nishkrx) | **Lead Privacy & Security Engineer** (Canvas Redaction Pipeline, Local `valueSource` Store & Policy Book Engine) |
-| **Drishti Pahuja** | [`@drishtipahuja80-debug`](https://github.com/drishtipahuja80-debug) | **Frontend & Extension UI Developer** (5-Tab Popup UI, Agent Cursor & Live Progress Telemetry Feed) |
-| **Disha Yadav** | [`@dishayadav15160-cyber`](https://github.com/dishayadav15160-cyber) | **Backend & API Systems Engineer** (Express Gateway, DOM Extractor & Rate-Limiting Subsystems) |
-| **Pragati** | [`@jainpragatii`](https://github.com/jainpragatii) | **QA & Benchmarking Specialist** (Autonomous CDP Profiling Scripts, Latency/Memory Budgets & Verification) |
-
-> 📌 **Note on Repository Commit History**: All team members developed their respective modules locally and shared their code into the central project repository. Commits were integrated and pushed via Team Lead Anuj Gupta's GitHub account (`@annujjguptaa-cpu`), which is why individual team member handles may not reflect on the GitHub contributor graph despite their direct code contributions.
-
----
-
-## 📸 See It Work (Live Interface Showcase)
-
-| 🖥️ **Live View & Progress Feed** | 🔒 **Local Profile & Value Sourcing** |
-| :---: | :---: |
-| ![Betaal Agent Started](qa-results/01-agent-started.png) | ![Betaal Step Review](qa-results/final-review-paused.png) |
-
----
-
-## 🇮🇳 DPDP Act 2023 & Data Sovereignty
-
-Betaal's privacy-preserving architecture—where no raw personal data or biometric pixels are transmitted over network requests—aligns with data minimization principles relevant under India's **Digital Personal Data Protection (DPDP) Act 2023**:
-* **On-Device Data Sanitization**: All visual perception (OCR, BERT-NER, BlazeFace ONNX face detection) runs entirely in the user's browser before any payload crosses the network.
-* **Zero PII Exposure**: Real identity values (Aadhaar, PAN, Phone, Address) are resolved locally on the device via the `valueSource` protocol—the cloud VLM only receives field keys, never actual personal data.
-* **Zero Persistence Server**: The Express backend operates with transient memory processing—no screenshots, PII text, or telemetry logs are ever written to disk or external databases.
-
----
-
-## 🔑 Key Capabilities at a Glance
-
-| Capability | What it means |
-| :--- | :--- |
-| **Zero-Trust redaction pipeline** | ViT screen classification, OCR + regex PII detection, ONNX face detection, and canvas-based redaction all run locally — nothing sensitive leaves the device unredacted |
-| **Autonomous agent loop** | Capture → detect → redact → reason → act → repeat, owned by the background service worker, so it keeps running even if the popup is closed |
-| **Human-in-the-loop intervention** | Pauses automatically on final/irreversible actions, low-confidence decisions, file uploads, or repeated failures — OS notification + badge count, resolved from the Notifications tab or inline feed cards |
-| **Policy Book** | Every redaction rule (what counts as sensitive, how it's redacted) is user-editable at runtime, with per-site overrides — not a black-box decision |
-| **Local Profile** | Real sensitive values (Aadhaar, phone, address) are resolved on-device only when filling a form — the cloud model only ever identifies which field needs filling, never the literal value |
-| **Performance Mode** | Fast (quantized model) / Balanced (default) / Accurate (upscaled input) — a live, switchable answer to the latency-vs-accuracy tradeoff, not just a claim on a slide |
-| **RAG-grounded reasoning** | Before deciding a next action, the agent retrieves structurally similar past successful runs from its own local Vault and includes them as precedent, reducing hallucinated selectors on unfamiliar sites |
-| **Durable local audit Vault** | Every run is logged — what was detected, what action was taken, what policy was active — locally, metadata only, never raw values |
-| **Cross-browser** | Native Chrome/Edge support, plus a Firefox-compatible manifest and polyfill shim |
-
----
-
-## 🔑 Environment & Database Setup
-
-### 1. API Keys (Do you need Gemini or Anthropic API keys?)
-- **Optional**: Run the backend with a real **Gemini API Key** (`GEMINI_API_KEY`) or **Anthropic Claude Key** (`ANTHROPIC_API_KEY`) in your `.env` file.
-- **Simulated VLM Fallback (No Key Required)**: With no API key, Betaal automatically engages a local simulated decision engine — fully testable out of the box, no paid keys required.
-- **Where to input key**: Create a `.env` file in the project root:
-  ```env
-  PORT=3000
-  GEMINI_API_KEY=your_gemini_api_key_here
-  ```
-
-### 2. Databases (MongoDB, Supabase, etc.)
-- **No external database required!** Betaal is built on a **Zero-Trust, Zero-Persistence architecture**.
-- **Client-side storage**: Vault history, Policy Book rules, and the Local Profile are all stored in `chrome.storage.local` — never synced, never sent to the backend.
-- **Server memory**: The backend processes VLM requests in transient memory only — no screenshots, PII text, or logs are ever written to disk or a database.
-
----
-
-## 🌐 Generalization & Real-Site Support
-
-Betaal is built for general-purpose browsing, not just its own demo pages:
-- **E-commerce checkouts**: multi-step forms, addresses, payment fields — DOM extraction capped at 50 elements, prioritizing visible fields, to stay fast on complex pages
-- **Fintech & banking pages**: redacts account numbers, card numbers, and PII across arbitrary field layouts
-- **Dynamic single-page apps (React/Vue/Angular)**: recursively traverses accessible Shadow DOM roots, retries once on pages that appear to still be rendering
-- **Embedded video/webcam widgets**: BlazeFace ONNX detection blurs faces via irreversible block pixelation
-- **Broader PII coverage**: Aadhaar, PAN, phone, email, plus a generic fallback catching any 9+ digit sequence (covering formats like SSNs or card numbers not individually pattern-matched)
-- **Restricted pages**: `chrome://`, the Web Store, and similar system pages are detected up front and handled with a clean, friendly message instead of a crash
-- **Selector self-correction**: if a chosen element no longer matches the live DOM, the agent re-sends the real structure and asks for a corrected selector, up to 2 retries, before falling back to asking the user
-- **Verified independently**: see `docs/qa-automated-testing.md` for the autonomous QA prompt used to test the extension against real, unfamiliar live sites and produce a structured pass/fail report
-
----
-
-## 🦊 How to Prepare Betaal for Firefox
-
-Betaal ships with a `browser-polyfill.js` shim so the same codebase runs on both engines.
-
-1. **Switch manifest file**:
-   ```bash
-   cp manifest-firefox.json manifest.json
-   ```
-2. **Open Firefox debugging**: go to `about:debugging#/runtime/this-firefox`
-3. **Load add-on**: click **Load Temporary Add-on...**, select `manifest.json`
-
-To return to Chrome/Edge: `git checkout manifest.json`. See `docs/firefox-build.md` for known differences (CSP, service worker lifecycle, WebGPU availability) and how each is handled.
-
----
-
-## 🛠️ Detailed Tech Stack Breakdown
-
-### 🔤 Programming & Scripting Languages
-
-| Language | Primary Usage & Scope | Execution Environment |
-| :--- | :--- | :--- |
-| **JavaScript (ES6+)** | Extension core engine, service workers (`background.js`), DOM manipulation, Web Workers, canvas manipulation, and Express backend API | Chrome / Edge / Firefox Runtimes, Web Workers, & Node.js Server |
-| **HTML5** | Extension popup interface UI structure (`popup.html`), test demo pages, and web page markup extraction | Extension Popup & Browser DOM |
-| **CSS3** | Extension popup styling, dark mode UI theme, live badge counters, and Shadow DOM injected overlays | Browser Rendering Engine |
-| **WebAssembly (WASM)** | Near-native execution of ONNX tensor models (BlazeFace, ViT, BERT-NER) and Tesseract OCR engine | Client Browser WebAssembly Sandbox |
-| **WebGPU Shading Language (WGSL)** | Hardware-accelerated GPU compute pipelines for high-throughput tensor vision inference | Client WebGPU Engine |
-
----
-
-### 🧰 Technologies, Frameworks & Libraries
-
-| Layer / Category | Technology / Library | Purpose & Functional Role | Execution Context |
-| :--- | :--- | :--- | :--- |
-| **Frontend & UI** | **Manifest V3 Extension API** | Extension architecture, background service worker (`background.js`), content scripts, popup window | Chrome / Edge / Firefox Extension |
-| | **HTML5 & CSS3** | 5-tab popup interface (Live View, Vault, Notifications, Policy, Profile) with real-time telemetry feed | Popup Window (`popup.html`) |
-| | **HTML5 Canvas 2D API** | On-device visual sanitization: solid black-fill over PII text regions and block-pixelation over detected faces | Client-Side (`redaction/redact.js`) |
-| | **Shadow DOM API** | Isolated, host-style-proof containers for Set-of-Marks (SoM) bounding box overlays and animated Agent Cursor | Live Webpage DOM Injection |
-| **On-Device ML Models** | **BlazeFace ONNX** (`230KB`) | Real-time human face & biometric detection model running hardware-accelerated tensor inference | Client WebGPU / WASM (`face-detect.js`) |
-| | **CLIP ViT-B/32** (`Transformers.js`) | Vision Transformer (`Xenova/clip-vit-base-patch32`) for zero-shot screen classification (`form-with-pii`, `video-tile`) | Client WebGPU / WASM (`vit-classifier.js`) |
-| | **MobileNetV3 Fast-Path** (`4MB`) | Quantized lightweight ONNX screen classifier for instant (<5ms) low-resource performance mode execution | Client WebGPU / WASM (`vit-classifier-fast.js`) |
-| | **BERT-NER** (`Xenova/bert-base-NER`) | Token-classification NLP model for extracting free-text Named Entities (Person Names, Locations, Organizations) | Client WebAssembly (`ner-detector.js`) |
-| | **Tesseract.js WASM** | Optical Character Recognition (OCR) engine extracting text and word bounding coordinates from screenshot pixels | Client WebAssembly (`ocr.js`) |
-| | **Regex Pattern Matcher** | Pattern matcher for structured Indian & global PII (Aadhaar, PAN, Phone, Email, generic 9+ digit IDs) | Client JS (`pii-patterns.js`) |
-| **Client Core & State** | **Web Worker Engine** | Dedicated worker thread (`detection-worker.js`) executing vision/NLP ML off the main UI thread to prevent browser jank | Off-Main-Thread Web Worker |
-| | **`chrome.storage.local`** | On-device persistent storage for Local Profile (`valueSource`), Vault history, and editable Policy Book rules | Browser Local Storage |
-| | **`browser-polyfill.js`** | Unified promise-based cross-browser API wrapper enabling identical code execution on Chrome, Edge, and Firefox | Web Extension Polyfill |
-| **Backend & Cloud AI** | **Node.js & Express.js** | Zero-persistence proxy server routing sanitized payloads, enforcing CORS, and managing rate-limiting (20 req/hr/IP) | Cloud Hosted (Render / Local) |
-| | **Google Gemini VLM** | Primary cloud reasoning model (`gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-1.5-flash`) for multi-step UI decisions | Cloud API Gateway (`backend/llm.js`) |
-| | **Anthropic Claude VLM** | Fallback cloud vision model (`claude-3-5-sonnet-20241022`) for complex structural reasoning | Cloud API Gateway (`backend/llm.js`) |
-| | **DOM Scoring Fallback Engine** | Local structural element scoring algorithm providing zero-API-key offline execution capabilities | Backend / Standalone Node.js |
-
----
-
 ## 📊 How Betaal Functions (System Flowcharts)
 
 ### 1. Simplified System Flowchart (High-Level Overview)
@@ -401,6 +268,139 @@ Before any network request is built:
 - 🔔 **Notifications** — pending interventions with Approve/Stop/Correction, resolvable here or inline in the feed card, backed by real OS notifications and an icon badge count.
 - ⚙️ **Policy** — every redaction rule, toggleable and method-configurable, with per-site overrides.
 - 👤 **Local Profile** — where the user enters real sensitive values once, stored locally in `chrome.storage.local`, used only to resolve `type` actions on-device.
+
+---
+
+## 👥 Team Roster
+
+| Member | GitHub Username | Role & Contributions |
+| :--- | :--- | :--- |
+| **Anuj Gupta** | [`@annujjguptaa-cpu`](https://github.com/annujjguptaa-cpu) | **Team Lead & Core Architect** (Browser Agent Loop, RAG Vault Engine, Multi-VLM Key Pooling & System Design) |
+| **Anjali Singh** | [`@Anjali-byte04`](https://github.com/Anjali-byte04) | **Lead AI/ML Engineer** (On-Device Vision Models: BlazeFace ONNX, CLIP ViT-B/32, BERT-NER & Web Workers) |
+| **Kumar Nishkarsh** | [`@Nishkrx`](https://github.com/Nishkrx) | **Lead Privacy & Security Engineer** (Canvas Redaction Pipeline, Local `valueSource` Store & Policy Book Engine) |
+| **Drishti Pahuja** | [`@drishtipahuja80-debug`](https://github.com/drishtipahuja80-debug) | **Frontend & Extension UI Developer** (5-Tab Popup UI, Agent Cursor & Live Progress Telemetry Feed) |
+| **Disha Yadav** | [`@dishayadav15160-cyber`](https://github.com/dishayadav15160-cyber) | **Backend & API Systems Engineer** (Express Gateway, DOM Extractor & Rate-Limiting Subsystems) |
+| **Pragati** | [`@jainpragatii`](https://github.com/jainpragatii) | **QA & Benchmarking Specialist** (Autonomous CDP Profiling Scripts, Latency/Memory Budgets & Verification) |
+
+> 📌 **Note on Repository Commit History**: All team members developed their respective modules locally and shared their code into the central project repository. Commits were integrated and pushed via Team Lead Anuj Gupta's GitHub account (`@annujjguptaa-cpu`), which is why individual team member handles may not reflect on the GitHub contributor graph despite their direct code contributions.
+
+---
+
+## 📸 See It Work (Live Interface Showcase)
+
+| 🖥️ **Live View & Progress Feed** | 🔒 **Local Profile & Value Sourcing** |
+| :---: | :---: |
+| ![Betaal Agent Started](qa-results/01-agent-started.png) | ![Betaal Step Review](qa-results/final-review-paused.png) |
+
+---
+
+## 🇮🇳 DPDP Act 2023 & Data Sovereignty
+
+Betaal's privacy-preserving architecture—where no raw personal data or biometric pixels are transmitted over network requests—aligns with data minimization principles relevant under India's **Digital Personal Data Protection (DPDP) Act 2023**:
+* **On-Device Data Sanitization**: All visual perception (OCR, BERT-NER, BlazeFace ONNX face detection) runs entirely in the user's browser before any payload crosses the network.
+* **Zero PII Exposure**: Real identity values (Aadhaar, PAN, Phone, Address) are resolved locally on the device via the `valueSource` protocol—the cloud VLM only receives field keys, never actual personal data.
+* **Zero Persistence Server**: The Express backend operates with transient memory processing—no screenshots, PII text, or telemetry logs are ever written to disk or external databases.
+
+---
+
+## 🔑 Key Capabilities at a Glance
+
+| Capability | What it means |
+| :--- | :--- |
+| **Zero-Trust redaction pipeline** | ViT screen classification, OCR + regex PII detection, ONNX face detection, and canvas-based redaction all run locally — nothing sensitive leaves the device unredacted |
+| **Autonomous agent loop** | Capture → detect → redact → reason → act → repeat, owned by the background service worker, so it keeps running even if the popup is closed |
+| **Human-in-the-loop intervention** | Pauses automatically on final/irreversible actions, low-confidence decisions, file uploads, or repeated failures — OS notification + badge count, resolved from the Notifications tab or inline feed cards |
+| **Policy Book** | Every redaction rule (what counts as sensitive, how it's redacted) is user-editable at runtime, with per-site overrides — not a black-box decision |
+| **Local Profile** | Real sensitive values (Aadhaar, phone, address) are resolved on-device only when filling a form — the cloud model only ever identifies which field needs filling, never the literal value |
+| **Performance Mode** | Fast (quantized model) / Balanced (default) / Accurate (upscaled input) — a live, switchable answer to the latency-vs-accuracy tradeoff, not just a claim on a slide |
+| **RAG-grounded reasoning** | Before deciding a next action, the agent retrieves structurally similar past successful runs from its own local Vault and includes them as precedent, reducing hallucinated selectors on unfamiliar sites |
+| **Durable local audit Vault** | Every run is logged — what was detected, what action was taken, what policy was active — locally, metadata only, never raw values |
+| **Cross-browser** | Native Chrome/Edge support, plus a Firefox-compatible manifest and polyfill shim |
+
+---
+
+## 🔑 Environment & Database Setup
+
+### 1. API Keys (Do you need Gemini or Anthropic API keys?)
+- **Optional**: Run the backend with a real **Gemini API Key** (`GEMINI_API_KEY`) or **Anthropic Claude Key** (`ANTHROPIC_API_KEY`) in your `.env` file.
+- **Simulated VLM Fallback (No Key Required)**: With no API key, Betaal automatically engages a local simulated decision engine — fully testable out of the box, no paid keys required.
+- **Where to input key**: Create a `.env` file in the project root:
+  ```env
+  PORT=3000
+  GEMINI_API_KEY=your_gemini_api_key_here
+  ```
+
+### 2. Databases (MongoDB, Supabase, etc.)
+- **No external database required!** Betaal is built on a **Zero-Trust, Zero-Persistence architecture**.
+- **Client-side storage**: Vault history, Policy Book rules, and the Local Profile are all stored in `chrome.storage.local` — never synced, never sent to the backend.
+- **Server memory**: The backend processes VLM requests in transient memory only — no screenshots, PII text, or logs are ever written to disk or a database.
+
+---
+
+## 🌐 Generalization & Real-Site Support
+
+Betaal is built for general-purpose browsing, not just its own demo pages:
+- **E-commerce checkouts**: multi-step forms, addresses, payment fields — DOM extraction capped at 50 elements, prioritizing visible fields, to stay fast on complex pages
+- **Fintech & banking pages**: redacts account numbers, card numbers, and PII across arbitrary field layouts
+- **Dynamic single-page apps (React/Vue/Angular)**: recursively traverses accessible Shadow DOM roots, retries once on pages that appear to still be rendering
+- **Embedded video/webcam widgets**: BlazeFace ONNX detection blurs faces via irreversible block pixelation
+- **Broader PII coverage**: Aadhaar, PAN, phone, email, plus a generic fallback catching any 9+ digit sequence (covering formats like SSNs or card numbers not individually pattern-matched)
+- **Restricted pages**: `chrome://`, the Web Store, and similar system pages are detected up front and handled with a clean, friendly message instead of a crash
+- **Selector self-correction**: if a chosen element no longer matches the live DOM, the agent re-sends the real structure and asks for a corrected selector, up to 2 retries, before falling back to asking the user
+- **Verified independently**: see `docs/qa-automated-testing.md` for the autonomous QA prompt used to test the extension against real, unfamiliar live sites and produce a structured pass/fail report
+
+---
+
+## 🦊 How to Prepare Betaal for Firefox
+
+Betaal ships with a `browser-polyfill.js` shim so the same codebase runs on both engines.
+
+1. **Switch manifest file**:
+   ```bash
+   cp manifest-firefox.json manifest.json
+   ```
+2. **Open Firefox debugging**: go to `about:debugging#/runtime/this-firefox`
+3. **Load add-on**: click **Load Temporary Add-on...**, select `manifest.json`
+
+To return to Chrome/Edge: `git checkout manifest.json`. See `docs/firefox-build.md` for known differences (CSP, service worker lifecycle, WebGPU availability) and how each is handled.
+
+---
+
+## 🛠️ Detailed Tech Stack Breakdown
+
+### 🔤 Programming & Scripting Languages
+
+| Language | Primary Usage & Scope | Execution Environment |
+| :--- | :--- | :--- |
+| **JavaScript (ES6+)** | Extension core engine, service workers (`background.js`), DOM manipulation, Web Workers, canvas manipulation, and Express backend API | Chrome / Edge / Firefox Runtimes, Web Workers, & Node.js Server |
+| **HTML5** | Extension popup interface UI structure (`popup.html`), test demo pages, and web page markup extraction | Extension Popup & Browser DOM |
+| **CSS3** | Extension popup styling, dark mode UI theme, live badge counters, and Shadow DOM injected overlays | Browser Rendering Engine |
+| **WebAssembly (WASM)** | Near-native execution of ONNX tensor models (BlazeFace, ViT, BERT-NER) and Tesseract OCR engine | Client Browser WebAssembly Sandbox |
+| **WebGPU Shading Language (WGSL)** | Hardware-accelerated GPU compute pipelines for high-throughput tensor vision inference | Client WebGPU Engine |
+
+---
+
+### 🧰 Technologies, Frameworks & Libraries
+
+| Layer / Category | Technology / Library | Purpose & Functional Role | Execution Context |
+| :--- | :--- | :--- | :--- |
+| **Frontend & UI** | **Manifest V3 Extension API** | Extension architecture, background service worker (`background.js`), content scripts, popup window | Chrome / Edge / Firefox Extension |
+| | **HTML5 & CSS3** | 5-tab popup interface (Live View, Vault, Notifications, Policy, Profile) with real-time telemetry feed | Popup Window (`popup.html`) |
+| | **HTML5 Canvas 2D API** | On-device visual sanitization: solid black-fill over PII text regions and block-pixelation over detected faces | Client-Side (`redaction/redact.js`) |
+| | **Shadow DOM API** | Isolated, host-style-proof containers for Set-of-Marks (SoM) bounding box overlays and animated Agent Cursor | Live Webpage DOM Injection |
+| **On-Device ML Models** | **BlazeFace ONNX** (`230KB`) | Real-time human face & biometric detection model running hardware-accelerated tensor inference | Client WebGPU / WASM (`face-detect.js`) |
+| | **CLIP ViT-B/32** (`Transformers.js`) | Vision Transformer (`Xenova/clip-vit-base-patch32`) for zero-shot screen classification (`form-with-pii`, `video-tile`) | Client WebGPU / WASM (`vit-classifier.js`) |
+| | **MobileNetV3 Fast-Path** (`4MB`) | Quantized lightweight ONNX screen classifier for instant (<5ms) low-resource performance mode execution | Client WebGPU / WASM (`vit-classifier-fast.js`) |
+| | **BERT-NER** (`Xenova/bert-base-NER`) | Token-classification NLP model for extracting free-text Named Entities (Person Names, Locations, Organizations) | Client WebAssembly (`ner-detector.js`) |
+| | **Tesseract.js WASM** | Optical Character Recognition (OCR) engine extracting text and word bounding coordinates from screenshot pixels | Client WebAssembly (`ocr.js`) |
+| | **Regex Pattern Matcher** | Pattern matcher for structured Indian & global PII (Aadhaar, PAN, Phone, Email, generic 9+ digit IDs) | Client JS (`pii-patterns.js`) |
+| **Client Core & State** | **Web Worker Engine** | Dedicated worker thread (`detection-worker.js`) executing vision/NLP ML off the main UI thread to prevent browser jank | Off-Main-Thread Web Worker |
+| | **`chrome.storage.local`** | On-device persistent storage for Local Profile (`valueSource`), Vault history, and editable Policy Book rules | Browser Local Storage |
+| | **`browser-polyfill.js`** | Unified promise-based cross-browser API wrapper enabling identical code execution on Chrome, Edge, and Firefox | Web Extension Polyfill |
+| **Backend & Cloud AI** | **Node.js & Express.js** | Zero-persistence proxy server routing sanitized payloads, enforcing CORS, and managing rate-limiting (20 req/hr/IP) | Cloud Hosted (Render / Local) |
+| | **Google Gemini VLM** | Primary cloud reasoning model (`gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-1.5-flash`) for multi-step UI decisions | Cloud API Gateway (`backend/llm.js`) |
+| | **Anthropic Claude VLM** | Fallback cloud vision model (`claude-3-5-sonnet-20241022`) for complex structural reasoning | Cloud API Gateway (`backend/llm.js`) |
+| | **DOM Scoring Fallback Engine** | Local structural element scoring algorithm providing zero-API-key offline execution capabilities | Backend / Standalone Node.js |
 
 ---
 
