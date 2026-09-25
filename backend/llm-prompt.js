@@ -99,6 +99,10 @@ Determine the SINGLE next UI action to make progress toward the goal.
 - For "type" on a [SENSITIVE] field: return "value": null and "valueSource": "<key>" from [${profileKeys}]. The executor resolves it locally — never put real PII in your response.
 - For "type" on a NON-sensitive field (search box, comment, quantity, message): return "value": "<text>".
 
+=== TASK CHECKLIST RULES ===
+- Create or update a high-level 3 to 5 step task checklist in the "checklist" array field.
+- Mark completed steps as [DONE], current step as [IN_PROGRESS], and future steps as [PENDING].
+
 === RESPONSE FORMAT ===
 Respond ONLY with a single valid JSON object — no markdown fences, no extra text:
 {
@@ -106,6 +110,7 @@ Respond ONLY with a single valid JSON object — no markdown fences, no extra te
   "selector": "CSS selector exactly matching an element from the DOM list",
   "value": string or null,
   "valueSource": one of [${profileKeys}] — ONLY for sensitive type actions,
+  "checklist": ["Step 1 [DONE]", "Step 2 [IN_PROGRESS]", "Step 3 [PENDING]"],
   "reasoning": "brief explanation of why this action and element",
   "final": true if this action submits the form or completes the task, false otherwise,
   "confidence": number 0.0–1.0

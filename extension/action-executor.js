@@ -24,14 +24,23 @@ async function executeAction(action) {
     };
   }
 
+  // Smoothly animate Agent Cursor to the target element coordinates
+  const rect = el.getBoundingClientRect();
+  const targetX = rect.left + rect.width / 2;
+  const targetY = rect.top + rect.height / 2;
+
+  if (typeof animateAgentCursor === 'function') {
+    await animateAgentCursor(targetX, targetY, action.action === 'click');
+  }
+
   // Visual highlight indicator (temporary 3px red outline)
   const originalOutline = el.style.outline;
   const originalTransition = el.style.transition;
   el.style.transition = 'outline 0.2s ease-in-out';
   el.style.outline = '3px solid #ef4444';
 
-  // Wait 500ms for demo visual feedback
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  // Wait 300ms for demo visual feedback
+  await new Promise((resolve) => setTimeout(resolve, 300));
 
   try {
     if (action.action === 'click') {

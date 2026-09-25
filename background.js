@@ -531,36 +531,62 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         } catch (e) {}
       }
 
+      // Loop-Guard Detection: Check if the exact same selector + action repeated without DOM change
+      let currentGoal = agentLoopState.goal;
+      const lastAction = agentLoopState.lastExecutedAction;
+      if (lastAction && lastAction.selector && lastAction.type) {
+        if (agentLoopState.consecutiveFailures >= 1) {
+          addLoopLog(`⚠️ Loop-Guard Warning: Action '${lastAction.type}' on '${lastAction.selector}' produced no state change. Inserting anti-loop guidance into VLM prompt.`);
+          currentGoal = `${agentLoopState.goal}\n\nLOOP-GUARD WARNING: Action '${lastAction.type}' on selector '${lastAction.selector}' failed to advance the page state. DO NOT repeat this action on '${lastAction.selector}'. Choose a different element or action.`;
+        }
+      }
+
+      // Append persistent task checklist if present
+      if (Array.isArray(agentLoopState.checklist) && agentLoopState.checklist.length > 0) {
+        currentGoal += `\n\nCURRENT TASK CHECKLIST:\n` + agentLoopState.checklist.join('\n');
+      }
+
       // Stage 3: Send Redacted Context to Backend VLM
-      // Note: If popup is open, popup runs full local canvas pipeline and provides cached result
-      // In background, send payload to backend
-      addLoopLog('⏳ Querying Backend VLM server at ' + BACKEND_URL + '...');
+      addLoopLog('⏳ Querying Backend VLM server...');
 
       let payloadImage = dataUrl;
       if (agentLoopState.lastPipelineResult && agentLoopState.lastPipelineResult.redactedImage && agentLoopState.redactionEnabled) {
         payloadImage = agentLoopState.lastPipelineResult.redactedImage;
       }
 
-      const backendResponse = await fetch(`${BACKEND_URL}/act`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          goal: agentLoopState.goal,
+      let actionResponse;
+      if (typeof sendToBackend === 'function') {
+        actionResponse = await sendToBackend({
+          goal: currentGoal,
           redactedImage: payloadImage,
           domStructure
-        })
-      });
-
-      if (!backendResponse.ok) {
-        let errDetails = `Server HTTP ${backendResponse.status}`;
-        try {
-          const errData = await backendResponse.json();
-          if (errData.error) errDetails = errData.error;
-        } catch (e) {}
-        throw new Error(`Backend server error: ${errDetails}`);
+        });
+      } else {
+        const backendResponse = await fetch(`${BACKEND_URL}/act`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            goal: currentGoal,
+            redactedImage: payloadImage,
+            domStructure
+          })
+        });
+        if (!backendResponse.ok) {
+          let errDetails = `Server HTTP ${backendResponse.status}`;
+          try {
+            const errData = await backendResponse.json();
+            if (errData.error) errDetails = errData.error;
+          } catch (e) {}
+          throw new Error(`Backend server error: ${errDetails}`);
+        }
+        actionResponse = await backendResponse.json();
       }
 
-      let actionResponse = await backendResponse.json();
+      // Save checklist returned by VLM
+      if (Array.isArray(actionResponse.checklist) && actionResponse.checklist.length > 0) {
+        agentLoopState.checklist = actionResponse.checklist;
+        try { await browser.storage.local.set({ activeTaskChecklist: actionResponse.checklist }); } catch (e) {}
+      }
 
       // Stage 4: Check Human Intervention Rules
       const interventionCheck = checkIntervention(actionResponse, {

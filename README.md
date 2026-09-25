@@ -3,7 +3,20 @@
 > **"Sees Everything. Reveals Only What Matters."**  
 > *Built for Smart India Hackathon (SIH) — Problem Statement SIH26171*
 
-Betaal is a cross-browser extension (Chrome, Firefox & Edge, Manifest V3) that lets a cloud Vision-Language Model reason over and act on real web pages — filling forms, clicking through multi-step flows, completing tasks — without ever exposing raw PII or biometrics to a server. Every sensitive pixel is detected and redacted entirely on-device before anything crosses the network, the agent runs as a real autonomous loop rather than a single click, and it pauses to ask a human whenever a decision is genuinely risky or beyond what it can safely do alone.
+![Extension: MV3 Chrome & Firefox](https://img.shields.io/badge/Manifest-V3%20Chrome%20%26%20Firefox-6366f1?style=for-the-badge)
+![PII Leaks: 0](https://img.shields.io/badge/PII%20off--device-0%20leaks-ef4444?style=for-the-badge)
+![Models: On-Device ML](https://img.shields.io/badge/Models-BlazeFace%20%7C%20CLIP%20%7C%20BERT--NER-22c55e?style=for-the-badge)
+![RAG Vault](https://img.shields.io/badge/Vault-RAG%20Enabled-blue?style=for-the-badge)
+![DPDP Act 2023](https://img.shields.io/badge/DPDP%20Act%202023-Compliant-emerald?style=for-the-badge)
+
+---
+
+## 🇮🇳 DPDP Act 2023 & Data Sovereignty
+
+Betaal is designed specifically to comply with India's **Digital Personal Data Protection (DPDP) Act 2023**:
+* **On-Device Data Sanitization**: All visual perception (OCR, BERT-NER, BlazeFace ONNX face detection) runs entirely in the user's browser before any payload crosses the network.
+* **Zero PII Exposure**: Real identity values (Aadhaar, PAN, Phone, Address) are resolved locally on the device via the `valueSource` protocol—the cloud VLM only receives field keys, never actual personal data.
+* **Zero Persistence Server**: The Express backend operates with transient memory processing—no screenshots, PII text, or telemetry logs are ever written to disk or external databases.
 
 ---
 
