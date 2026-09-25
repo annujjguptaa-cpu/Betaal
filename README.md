@@ -125,7 +125,7 @@ To return to Chrome/Edge: `git checkout manifest.json`. See `docs/firefox-build.
 
 ## 📊 How Betaal Functions (System Flowcharts)
 
-### 1. Simplified System Flowchart (High-Level Overview / Presentation Slide)
+### 1. Simplified System Flowchart (High-Level Overview)
 
 ```mermaid
 flowchart LR
@@ -202,7 +202,7 @@ flowchart TD
 
 ## 🏗️ System Architecture Diagrams
 
-### 1. Simplified System Architecture Diagram (PPT / Slide Presentation Format)
+### 1. Simplified System Architecture Diagram
 
 ```mermaid
 flowchart LR
