@@ -11,6 +11,23 @@
 
 ---
 
+## 📋 Problem Statement & Overview
+
+* **Hackathon**: Smart India Hackathon (SIH) 2026
+* **Problem Statement ID**: **SIH26171**
+* **Title**: On-device Visual Perception for Light-weight Browser Agents
+
+### 🎯 Problem Statement
+Most AI agent pipelines run server-side, requiring users to send full screenshots or DOM data to third-party cloud models. This is unacceptable for sensitive environments (government portals, banking, Aadhaar/PAN data) under India's **DPDP Act 2023**. SIH26171 challenges teams to build a **fully on-device browser agent** that processes visual perception locally, redacts PII before any data leaves the machine, and sends only anonymized UI metadata to a cloud VLM for action generation.
+
+### 🏠 Project Overview
+Betaal is a cross-browser extension (Chrome, Firefox & Edge, Manifest V3) that enables cloud Vision-Language Models to reason over and execute complex web tasks—filling forms, clicking through multi-step wizards, completing filings—without ever exposing raw PII or biometrics to a cloud server.
+* **Live Deployed Server Gateway**: [`https://betaal-backend-p8vk.onrender.com`](https://betaal-backend-p8vk.onrender.com)
+* **Live Deployed Demo Portal (Grievance + Video)**: [`https://annujjguptaa-cpu.github.io/Betaal/demo-page/`](https://annujjguptaa-cpu.github.io/Betaal/demo-page/)
+* **Live Deployed Demo Wizard (Passport Application)**: [`https://annujjguptaa-cpu.github.io/Betaal/demo-page/passport-application.html`](https://annujjguptaa-cpu.github.io/Betaal/demo-page/passport-application.html)
+
+---
+
 ## 👥 Team Roster
 
 | Member | GitHub Username | Role & Contributions |
@@ -427,6 +444,7 @@ For judging demonstrations, refer to our full documentation guides:
 
 ## 📚 Related Project Documents
 
+- 🌐 **[Deployed Demo Sites & Server Gateway Guide](docs/deployed-demo-sites.md)** — Production Express server on Render (`betaal-backend-p8vk.onrender.com`) & live GitHub Pages demo sites.
 - 📄 **[Memory Budget & Profiling Report](docs/memory-budget.md)** — 3x RAM profiling across background worker, content script, popup UI, and ONNX models (423.2 MB avg, within 500 MB hard cap).
 - ⏱️ **[Pipeline Latency Budget Report](docs/latency-budget.md)** — Stage-by-stage latency analysis comparing demo page vs. real public portal execution.
 - 🎬 **[Timed Presentation & Demo Script](docs/demo-script.md)** — Step-by-step 3-minute pitch script with live adversarial verification instructions.
