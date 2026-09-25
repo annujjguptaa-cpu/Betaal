@@ -11,6 +11,14 @@
 
 ---
 
+## 📸 See It Work (Live Interface Showcase)
+
+| 🖥️ **Live View & Progress Feed** | 🔒 **Local Profile & Value Sourcing** |
+| :---: | :---: |
+| ![Betaal Agent Started](qa-results/01-agent-started.png) | ![Betaal Step Review](qa-results/final-review-paused.png) |
+
+---
+
 ## 🇮🇳 DPDP Act 2023 & Data Sovereignty
 
 Betaal is designed specifically to comply with India's **Digital Personal Data Protection (DPDP) Act 2023**:
@@ -402,7 +410,31 @@ For judging demonstrations, refer to our full documentation guides:
 
 ---
 
+## 📚 Related Project Documents
+
+- 📄 **[Memory Budget & Profiling Report](docs/memory-budget.md)** — 3x RAM profiling across background worker, content script, popup UI, and ONNX models (423.2 MB avg, within 500 MB hard cap).
+- ⏱️ **[Pipeline Latency Budget Report](docs/latency-budget.md)** — Stage-by-stage latency analysis comparing demo page vs. real public portal execution.
+- 🎬 **[Timed Presentation & Demo Script](docs/demo-script.md)** — Step-by-step 3-minute pitch script with live adversarial verification instructions.
+- 🛡️ **[Kill-Switch & Offline Verification](docs/kill-switch-demo.md)** — Procedure to verify on-device vision processing with network disconnected.
+- 🌐 **[Real-Site Generalization Testing](docs/generalization-testing.md)** — Evaluation notes across banking, e-commerce, and single-page apps (SPAs).
+- 📊 **[RAG Retrieval Effectiveness Report](docs/rag-effectiveness.md)** — Before/after comparison proving structural signature RAG accuracy gains.
+- 🦊 **[Firefox Build & Deployment Guide](docs/firefox-build.md)** — Manifest V3 Firefox compatibility, polyfill shims, and CSP settings.
+
+---
+
+## 🔗 Key References & Frameworks
+
+* **Problem Statement**: Smart India Hackathon (SIH) 2026 — PS171 (*On-device Visual Perception for Light-weight Browser Agents*)
+* **Transformers.js (v3)**: [HuggingFace Transformers.js](https://huggingface.co/blog/transformersjs-v3) — Client-side CLIP ViT and BERT-NER execution
+* **ONNX Runtime Web**: [Microsoft ONNX Runtime Web](https://onnxruntime.ai/docs/execution-providers/WebGPU-ExecutionProvider.html) — WebGPU and WASM inference engine for BlazeFace
+* **DPDP Act 2023**: [Digital Personal Data Protection Act 2023](https://www.meity.gov.in/writereaddata/files/Digital%20Personal%20Data%20Protection%20Act%202023.pdf) — Ministry of Electronics and Information Technology (MeitY)
+* **Tesseract.js**: [Tesseract.js WASM Engine](https://tesseract.projectnaptha.com/) — On-device Optical Character Recognition
+* **Google Gemini & Anthropic Claude**: Cloud Vision-Language Model APIs for sanitized context reasoning
+
+---
+
 ## 📄 License
 
 ISC License
+
 
