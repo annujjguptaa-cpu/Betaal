@@ -284,7 +284,7 @@ Before any network request is built:
 | :--- | :--- | :--- |
 | **Anuj Gupta** | [`@annujjguptaa-cpu`](https://github.com/annujjguptaa-cpu) | **Team Lead & Core Architect** (Browser Agent Loop, RAG Vault Engine, Multi-VLM Key Pooling & System Design) |
 | **Anjali Singh** | [`@Anjali-byte04`](https://github.com/Anjali-byte04) | **Lead AI/ML Engineer** (On-Device Vision Models: BlazeFace ONNX, CLIP ViT-B/32, BERT-NER & Web Workers) |
-| **Kumar Nishkarsh** | [`@Nishkrx`](https://github.com/Nishkrx) | **Lead Privacy & Security Engineer** (Canvas Redaction Pipeline, Local `valueSource` Store & Policy Book Engine) |
+| **Kumar Nishkarsh** | [`@Nishkrx`](https://github.com/Niskrx) | **Lead Privacy & Security Engineer** (Canvas Redaction Pipeline, Local `valueSource` Store & Policy Book Engine) |
 | **Drishti Pahuja** | [`@drishtipahuja80-debug`](https://github.com/drishtipahuja80-debug) | **Frontend & Extension UI Developer** (5-Tab Popup UI, Agent Cursor & Live Progress Telemetry Feed) |
 | **Disha Yadav** | [`@dishayadav15160-cyber`](https://github.com/dishayadav15160-cyber) | **Backend & API Systems Engineer** (Express Gateway, DOM Extractor & Rate-Limiting Subsystems) |
 | **Pragati** | [`@jainpragatii`](https://github.com/jainpragatii) | **QA & Benchmarking Specialist** (Autonomous CDP Profiling Scripts, Latency/Memory Budgets & Verification) |
