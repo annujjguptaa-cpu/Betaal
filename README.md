@@ -395,6 +395,7 @@ To return to Chrome/Edge: `git checkout manifest.json`. See `docs/firefox-build.
 | | **Tesseract.js WASM** | Optical Character Recognition (OCR) engine extracting text and word bounding coordinates from screenshot pixels | Client WebAssembly (`ocr.js`) |
 | | **Regex Pattern Matcher** | Pattern matcher for structured Indian & global PII (Aadhaar, PAN, Phone, Email, generic 9+ digit IDs) | Client JS (`pii-patterns.js`) |
 | **Client Core & State** | **Web Worker Engine** | Dedicated worker thread (`detection-worker.js`) executing vision/NLP ML off the main UI thread to prevent browser jank | Off-Main-Thread Web Worker |
+| | **Local RAG Precedent Engine** | Structural signature hashing (`rag-retrieval.js`) & Jaccard similarity scoring over local Vault history to ground VLM context | Client JS (`rag-retrieval.js`) |
 | | **`chrome.storage.local`** | On-device persistent storage for Local Profile (`valueSource`), Vault history, and editable Policy Book rules | Browser Local Storage |
 | | **`browser-polyfill.js`** | Unified promise-based cross-browser API wrapper enabling identical code execution on Chrome, Edge, and Firefox | Web Extension Polyfill |
 | **Backend & Cloud AI** | **Node.js & Express.js** | Zero-persistence proxy server routing sanitized payloads, enforcing CORS, and managing rate-limiting (20 req/hr/IP) | Cloud Hosted (Render / Local) |
@@ -443,7 +444,7 @@ Betaal/
 │   └── passport-application.html  # Multi-step wizard demonstrating the full agent loop
 ├── scripts/
 │   ├── quantize_model.py          # One-time build tool producing the Fast model variant
-│   └── qa-test.js                 # Antigravity-generated autonomous real-site QA script
+│   └── qa-test.js                 # Autonomous real-site CDP profiling and QA script
 ├── docs/
 │   ├── demo-script.md             # Timed presentation script for judges
 │   ├── firefox-build.md           # Firefox deployment & manifest swap guide
