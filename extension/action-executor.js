@@ -124,6 +124,16 @@ async function executeAction(action) {
           }
         }
 
+        // Clean parenthetical descriptors from station codes (e.g. "NDLS (New Delhi)" -> "NDLS")
+        if (resolvedValue && typeof resolvedValue === 'string') {
+          resolvedValue = resolvedValue.replace(/\s*\([^)]*\)/g, '').trim();
+          // Extract 3-5 letter station code if present (e.g., "NDLS" from "NDLS NEW DELHI")
+          const stationCodeMatch = resolvedValue.match(/\b[A-Z]{3,5}\b/);
+          if (stationCodeMatch && resolvedValue.length > 5) {
+            resolvedValue = stationCodeMatch[0];
+          }
+        }
+
         console.log(
           `[ActionExecutor] TYPE on "${action.selector}" — value: "${resolvedValue}"`
         );
