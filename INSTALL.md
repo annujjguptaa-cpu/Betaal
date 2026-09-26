@@ -44,7 +44,7 @@ npm start
 2. Click the **Betaal extension icon** (बेताल) in your Chrome toolbar.
 3. In the popup under the **Live View** tab, you will see a text input labeled:  
    👉 **`What should I help you do on this page?`**
-4. Type your prompt or request (for example):
+4. Type your task instruction or goal (for example):
    - `"Fill out this grievance form with test data and submit"`
    - `"Enter my name and phone number in the contact fields"`
    - `"Click the next button to proceed"`

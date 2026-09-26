@@ -128,7 +128,7 @@ flowchart LR
 
     subgraph Server["☁️ Backend Server — Zero Persistence"]
         direction TB
-        Prompt["Prompt Builder<br/>RAG-grounded with Vault precedents"]
+        ContextEngine["Context Builder<br/>RAG-grounded with Vault precedents"]
         VLM["Claude / Gemini / DOM Scoring<br/>cloud reasoning over sanitized data"]
     end
 
@@ -185,7 +185,7 @@ flowchart TD
 
     subgraph Backend ["Express Backend"]
         Server["server.js"]
-        PromptBuilder["llm-prompt.js (Rich DOM + RAG)"]
+        ContextBuilder["llm-prompt.js (Rich DOM Context + RAG)"]
         LLM["llm.js → Claude / Gemini / DOM Scoring Engine"]
     end
 
@@ -209,9 +209,9 @@ flowchart TD
     Signature --> Retrieve
     Retrieve --> VaultStore
     Loop --> Server
-    Server --> PromptBuilder
-    PromptBuilder --> Retrieve
-    PromptBuilder --> LLM
+    Server --> ContextBuilder
+    ContextBuilder --> Retrieve
+    ContextBuilder --> LLM
     LLM --> Loop
     Loop --> NotifEngine
     NotifEngine --> NotifTab
