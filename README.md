@@ -295,9 +295,15 @@ Before any network request is built:
 
 ## 📸 See It Work (Live Interface Showcase)
 
-| 🖥️ **Live View & Progress Feed** | 🔒 **Local Profile & Value Sourcing** |
+| 🖥️ **Betaal Extension Interface** | ⚙️ **Runtime Policy Book Configuration** |
 | :---: | :---: |
-| ![Betaal Agent Started](qa-results/01-agent-started.png) | ![Betaal Step Review](qa-results/final-review-paused.png) |
+| ![Betaal Interface](qa-results/Betaal.png) | ![Betaal Policy Book](qa-results/BetaalPolicy.png) |
+| *Main extension interface featuring live goal execution, status telemetry, and active mode controls.* | *Runtime-editable redaction policy book for custom PII rules, face detection modes, and per-site overrides.* |
+
+| ⚡ **Autonomous Execution & Redaction Loop** | 👤 **Local Profile & Zero-Trust Value Store** |
+| :---: | :---: |
+| ![Betaal Execution Loop](qa-results/BetaalExecution.png) | ![Betaal Local Profile](qa-results/BetaalProfile.png) |
+| *Real-time step activity feed showing on-device redaction telemetry, timing benchmarks, and Set-of-Marks overlays.* | *On-device sensitive identity store resolving values locally via valueSource without sending PII over the network.* |
 
 ---
 
