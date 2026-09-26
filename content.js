@@ -269,6 +269,7 @@ if (browserApi && browserApi.runtime && browserApi.runtime.onMessage) {
       }
 
       if (message.type === 'EXECUTE_ACTION') {
+        if (message.goal) window.__betaalCurrentGoal = message.goal;
         if (typeof executeAction !== 'undefined') {
           const result = await executeAction(message.action);
           return result;

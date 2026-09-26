@@ -720,7 +720,8 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         try {
           execRes = await browser.tabs.sendMessage(activeTab.id, {
             type: 'EXECUTE_ACTION',
-            action: actionResponse
+            action: actionResponse,
+            goal: agentLoopState.goal
           });
         } catch (execErr) {
           // If execution message failed, page may be navigating (Module 69)

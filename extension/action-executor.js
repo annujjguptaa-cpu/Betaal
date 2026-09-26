@@ -94,8 +94,18 @@ async function executeAction(action) {
         // Non-sensitive field — VLM provided a literal value
         resolvedValue = action.value || '';
         valueResolution = 'vlm-provided';
+
+        // Fallback: If VLM left action.value empty but user goal contains a tracking/consignment number or code, extract it directly
+        if (!resolvedValue && window.__betaalCurrentGoal) {
+          const match = window.__betaalCurrentGoal.match(/\b[A-Z0-9]{8,20}\b/i);
+          if (match) {
+            resolvedValue = match[0];
+            console.log(`[ActionExecutor] Fallback extracted value "${resolvedValue}" from goal string.`);
+          }
+        }
+
         console.log(
-          `[ActionExecutor] TYPE on "${action.selector}" — value from VLM (non-sensitive field). ` +
+          `[ActionExecutor] TYPE on "${action.selector}" — value from VLM/Goal (non-sensitive field). ` +
           `Value: "${resolvedValue}"`
         );
       }
