@@ -223,8 +223,16 @@ function isConfigError(status, errMessage = '') {
   if (msgLower.includes('api key') || msgLower.includes('invalid_api_key') || status === 401 || status === 403) {
     return false;
   }
+  // 413 = payload too large — per-request error, not a model/config issue; skip remaining keys won't help
+  if (status === 413) {
+    return false;
+  }
   // Model-not-found, 404, or invalid model name errors are config errors
-  if (status === 404 || msgLower.includes('model') || msgLower.includes('not_found') || msgLower.includes('does not exist')) {
+  if (status === 404 || msgLower.includes('not_found') || msgLower.includes('does not exist')) {
+    return true;
+  }
+  // "model" in message with non-413 non-key errors → config issue
+  if (msgLower.includes('model') && status !== 413 && status !== 429) {
     return true;
   }
   return false;

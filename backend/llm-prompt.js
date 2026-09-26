@@ -39,8 +39,9 @@ function formatDomElement(item, idx) {
 
   const sensitiveTag = item.sensitive ? ' [SENSITIVE]' : '';
   const attrStr = parts.length > 0 ? ` { ${parts.join(', ')} }` : '';
+  const selectorStr = item.selector ? ` → selector="${item.selector}"` : '';
 
-  return `${idx + 1}. <${tag}${type}>${attrStr}${sensitiveTag}`;
+  return `${idx + 1}. <${tag}${type}>${attrStr}${sensitiveTag}${selectorStr}`;
 }
 
 /**
@@ -92,7 +93,7 @@ ${ragPrecedentSection}
 Determine the SINGLE next UI action to make progress toward the goal.
 - Prefer filling empty required fields before clicking submit buttons.
 - If a field has a currentValue already set, skip it and move to the next empty field.
-- Use the EXACT selector from the DOM list above (prefer #id over [name=...] over tag[type=...]).
+- CRITICAL: Use the EXACT selector shown after → in the DOM list above. Copy it character-for-character. Do NOT construct your own selector from the element attributes.
 - If the page has no relevant elements, use {"action":"scroll","selector":"body"} to reveal more.
 
 === VALUE SOURCING RULES ===

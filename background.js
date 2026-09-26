@@ -796,7 +796,11 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
           agentLoopState.consecutiveFailures++;
           addLoopLog(`⚠️ Selector "${actionResponse.selector}" not found during execution. Re-prompting VLM backend (Retry ${retryAttempts}/2)...`);
           
-          const correctionGoal = `${agentLoopState.goal}\n\nThe selector [${actionResponse.selector}] does not exist on this page. Available elements:\n${JSON.stringify(domStructure)}\nChoose a selector ONLY from this list.`;
+          // Send only compact selector list — NOT raw DOM objects — to avoid 413 payload-too-large
+          const selectorList = domStructure
+            .map((el, i) => `${i + 1}. ${el.selector || el.tag}`)
+            .join('\n');
+          const correctionGoal = `${agentLoopState.goal}\n\nThe selector [${actionResponse.selector}] does not exist on this page.\nChoose a selector ONLY from these available selectors:\n${selectorList}`;
           
           const retryBackend = await fetch(`${BACKEND_URL}/act`, {
             method: 'POST',
@@ -900,12 +904,45 @@ async function runUserCorrectedAction(interventionId, correctionText) {
         : dataUrl;
     } catch (_) {}
 
-    // Build a correction-augmented goal string for the VLM
+    // CAPTCHA fast-path: if the correction text is a short alphanumeric string (≤10 chars)
+    // and a captcha input exists in the DOM, type it directly without a VLM round-trip
+    const captchaEl = domStructure.find(el =>
+      ['captcha', 'recaptcha', 'captchainput', 'captcha-input'].some(kw =>
+        (el.id || el.name || el.placeholder || el.ariaLabel || '').toLowerCase().includes(kw)
+      )
+    );
+    const looksLikeCaptchaAnswer = /^[A-Za-z0-9]{3,10}$/.test(correctionText.trim());
+
+    if (captchaEl && looksLikeCaptchaAnswer) {
+      addLoopLog(`🔐 Captcha fast-path: typing "${correctionText}" into captcha field "${captchaEl.selector || captchaEl.name || captchaEl.id}"...`);
+      const captchaSelector = captchaEl.selector || (captchaEl.id ? `#${captchaEl.id}` : `[name="${captchaEl.name}"]`);
+      let captchaExecRes = null;
+      try {
+        captchaExecRes = await browser.tabs.sendMessage(activeTab.id, {
+          type: 'EXECUTE_ACTION',
+          action: { action: 'type', selector: captchaSelector, value: correctionText.trim(), reasoning: 'Typing captcha answer provided by user.' },
+          goal: agentLoopState.goal
+        });
+      } catch (_) { captchaExecRes = { success: true }; }
+
+      if (captchaExecRes && captchaExecRes.success) {
+        addLoopLog(`✅ Captcha answer typed. Loop will resume on next iteration.`);
+        agentLoopState.isLocked = false;
+        agentLoopState.consecutiveFailures = 0;
+        broadcastLoopState();
+        return;
+      }
+    }
+
+    // Build a correction-augmented goal string for the VLM — send only selectors, NOT full DOM JSON
+    const selectorSummary = domStructure
+      .map((el, i) => `${i + 1}. ${el.selector || el.tag}`)
+      .join('\n');
     const correctedGoal =
       `Original goal: ${agentLoopState.goal}\n\n` +
       `USER CORRECTION — Do NOT repeat the previous plan. Instead, follow this specific instruction now:\n` +
       `"${correctionText}"\n\n` +
-      `Available DOM elements:\n${JSON.stringify(domStructure)}`;
+      `Available selectors:\n${selectorSummary}`;
 
     addLoopLog(`✏️ User correction received: "${correctionText}". Re-querying VLM…`);
 

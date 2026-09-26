@@ -95,12 +95,14 @@ async function executeAction(action) {
         resolvedValue = action.value || '';
         valueResolution = 'vlm-provided';
 
-        // Fallback: If VLM left action.value empty but user goal contains a tracking/consignment number or code, extract it directly
+        // Fallback: extract tracking/consignment code from goal — must contain both letters AND digits
+        // to avoid matching plain words like "DELIVERY", "TRACK", etc.
         if (!resolvedValue && window.__betaalCurrentGoal) {
-          const match = window.__betaalCurrentGoal.match(/\b[A-Z0-9]{8,20}\b/i);
-          if (match) {
-            resolvedValue = match[0];
-            console.log(`[ActionExecutor] Fallback extracted value "${resolvedValue}" from goal string.`);
+          const tokens = window.__betaalCurrentGoal.match(/\b[A-Z0-9]{8,20}\b/gi) || [];
+          const trackingCode = tokens.find(t => /[A-Z]/i.test(t) && /\d/.test(t));
+          if (trackingCode) {
+            resolvedValue = trackingCode;
+            console.log(`[ActionExecutor] Fallback extracted tracking code "${resolvedValue}" from goal string.`);
           }
         }
 

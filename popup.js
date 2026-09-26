@@ -351,26 +351,40 @@ function buildFeedCardHTML(item) {
     : '';
 
   // Inline action buttons (Modules 80 & 81) — only for paused steps
+  const isCaptchaStep = item.status === 'paused' && item.interventionId &&
+    (item.subtitle || '').toLowerCase().includes('captcha');
+
   const inlineActions = item.status === 'paused' && item.interventionId ? `
     <div class="feed-inline-actions">
       <div style="font-size:0.72rem;color:#f59e0b;margin-bottom:6px;width:100%;">
-        ⚠️ Approval required: <b>${item.subtitle}</b>
+        ⚠️ ${isCaptchaStep ? '🔐 CAPTCHA detected:' : 'Approval required:'} <b>${item.subtitle}</b>
       </div>
+      ${isCaptchaStep ? `
+      <div class="feed-correction-row" style="margin-bottom:6px;">
+        <div class="feed-correction-label" style="color:#fb923c;">Type the CAPTCHA characters shown on the page:</div>
+        <div class="feed-correction-input-row">
+          <input type="text" class="feed-correction-input"
+            data-intervention-id="${item.interventionId}"
+            placeholder="Enter captcha text here..."
+            style="font-family:monospace;letter-spacing:2px;" />
+          <button class="feed-correction-submit" data-intervention-id="${item.interventionId}">Submit</button>
+        </div>
+      </div>
+      <button class="feed-inline-btn feed-approve-btn" data-id="${item.interventionId}">✅ I solved it — Continue</button>
+      ` : `
       <button class="feed-inline-btn feed-approve-btn" data-id="${item.interventionId}">✅ Approve &amp; Continue</button>
+      `}
       <button class="feed-inline-btn feed-stop-btn" data-id="${item.interventionId}">🛑 Stop Here</button>
     </div>
-    <div class="feed-correction-row">
+    ${!isCaptchaStep ? `<div class="feed-correction-row">
       <div class="feed-correction-label">✏️ Or tell it what to do instead:</div>
       <div class="feed-correction-input-row">
-        <input
-          type="text"
-          class="feed-correction-input"
+        <input type="text" class="feed-correction-input"
           data-intervention-id="${item.interventionId}"
-          placeholder="e.g. Click the Sign In button instead..."
-        />
+          placeholder="e.g. Click the Sign In button instead..." />
         <button class="feed-correction-submit" data-intervention-id="${item.interventionId}">Send</button>
       </div>
-    </div>` : '';
+    </div>` : ''}` : '';
 
   // Expandable Details (Module 79) — thumbnails + timing inside <details>
   const thumbsHTML = (item.originalImage && item.redactedImage) ? `

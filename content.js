@@ -82,7 +82,7 @@ function getDOMStructure() {
   const scrollX  = window.scrollX  || 0;
   const focusedEl = document.activeElement;
 
-  return prioritized.map((el) => {
+  return prioritized.map((el, elIdx) => {
     const rect        = el.getBoundingClientRect();
     const tag         = el.tagName.toLowerCase();
     const type        = (el.type  || '').toLowerCase();
@@ -136,6 +136,25 @@ function getDOMStructure() {
     const isSensitiveType = ['password', 'file'].includes(type);
     const isSensitive = isSensitiveType || sensitiveKeywords.some(kw => combinedStr.includes(kw));
 
+    // ── Compute a reliable CSS selector for this element ──
+    let computedSelector = '';
+    if (id) {
+      computedSelector = `#${CSS.escape(id)}`;
+    } else if (name) {
+      computedSelector = `[name="${name}"]`;
+    } else if (placeholder) {
+      computedSelector = `${tag}[placeholder="${placeholder.replace(/"/g, '\\"')}"]`;
+    } else if (ariaLabel) {
+      computedSelector = `[aria-label="${ariaLabel.replace(/"/g, '\\"')}"]`;
+    } else if (type) {
+      // nth-of-type fallback for elements with same tag+type
+      const sameTypeSiblings = Array.from(document.querySelectorAll(`${tag}[type="${type}"]`));
+      const nthIdx = sameTypeSiblings.indexOf(el);
+      computedSelector = nthIdx >= 0 ? `${tag}[type="${type}"]:nth-of-type(${nthIdx + 1})` : `${tag}[type="${type}"]`;
+    } else {
+      computedSelector = tag;
+    }
+
     return {
       tag,
       type,
@@ -156,6 +175,7 @@ function getDOMStructure() {
       isFocused,
       isDisabled,
       isRequired,
+      selector: computedSelector,   // ← ready-to-use CSS selector for VLM
       rect: {
         left:   Math.round(rect.left   + scrollX),
         top:    Math.round(rect.top    + scrollY),
