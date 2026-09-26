@@ -179,11 +179,42 @@ async function executeAction(action) {
       el.dispatchEvent(new Event('change', { bubbles: true }));
       el.dispatchEvent(new Event('blur', { bubbles: true }));
 
-      // Autocomplete support for Angular dropdowns (e.g. IRCTC): press DownArrow + Enter to select option
+      // Autocomplete selection for railway/station search dropdowns (IRCTC / Indian Railways Enquiry):
+      // Wait for station dropdown list to populate, then click the first matching dropdown item directly
       setTimeout(() => {
-        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }));
-        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-      }, 250);
+        try {
+          const dropdownSelectors = [
+            '.p-autocomplete-item',
+            '.ui-autocomplete-item',
+            'li.ui-menu-item',
+            'ul.ui-autocomplete-items li',
+            '.station-item',
+            '.ng-option',
+            '[role="option"]',
+            '.stn-name',
+            '.ui-menu-item-wrapper',
+            '.ui-corner-all'
+          ];
+          let clicked = false;
+          for (const sel of dropdownSelectors) {
+            const items = Array.from(document.querySelectorAll(sel));
+            const visibleItem = items.find(item => item.offsetWidth > 0 && item.offsetHeight > 0 && item !== el);
+            if (visibleItem) {
+              console.log(`[ActionExecutor] Auto-selecting dropdown option: "${(visibleItem.innerText || visibleItem.textContent || '').slice(0, 40)}"`);
+              visibleItem.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+              visibleItem.click();
+              clicked = true;
+              break;
+            }
+          }
+          if (!clicked) {
+            el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }));
+            el.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', keyCode: 40, bubbles: true }));
+            el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+            el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, bubbles: true }));
+          }
+        } catch (_) {}
+      }, 500);
 
       // Reset outline & hide cursor after brief delay
       setTimeout(() => { 
