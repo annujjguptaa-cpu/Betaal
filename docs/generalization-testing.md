@@ -9,7 +9,7 @@ This document records manual testing results of Betaal's privacy-preserving agen
 * **Target Site**: Standard Online Banking Login Interface (e.g. ICICI Bank / HDFC NetBanking / Chase)
 * **What Worked**:
   * Input fields (`#username`, `#password`) were accurately identified by `getDOMStructure()`.
-  * Redaction pipeline masked account numbers and credentials prior to prompt transmission.
+  * Redaction pipeline masked account numbers and credentials prior to network transmission.
   * Inline validation prevented empty goal submissions.
 * **What Broke**:
   * Specialized virtual keyboards and dynamic iframe overlays caused cross-origin access warnings.

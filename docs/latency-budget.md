@@ -29,4 +29,4 @@
 
 2. **Flagged Target Threshold Exceedances:**  
    - **PII Detection Stage (Measured 500ms vs 400ms Target)**: Triggered when BERT-NER tokenizes dense free-text paragraphs. *Mitigation*: Switch to MobileNet Fast-Path when `performanceMode === 'fast'`.
-   - **Canvas Redaction Pass (Measured 118ms vs 100ms Target)**: Occurs on high-DPI displays. *Mitigation*: Downscaled normalization pass in Prompt 74 caps max screen dimension at 1920px.
+   - **Canvas Redaction Pass (Measured 118ms vs 100ms Target)**: Occurs on high-DPI displays. *Mitigation*: Downscaled normalization pass caps max screen dimension at 1920px.

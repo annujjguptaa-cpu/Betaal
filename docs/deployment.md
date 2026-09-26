@@ -1,6 +1,6 @@
 # 🌐 Betaal Deployment & Rate-Limiting Guide
 
-> **Prompts 90–93 Deployment Reference**  
+> **Deployment Reference & Configurations**  
 > Covers backend server deployment, rate-limiting & cost protection configurations, public GitHub Pages demo setup, and extension endpoint configuration.
 
 ---
@@ -32,7 +32,7 @@ https://betaal-backend-p8vk.onrender.com
 
 ---
 
-## 2. Public Cost-Protection & Rate Limiting (Prompt 92)
+## 2. Public Cost-Protection & Rate Limiting
 
 To prevent cost abuse and spam on the public `/act` backend endpoint, an **in-memory rate limiter and daily cost ceiling** are built directly into `backend/server.js` with zero external dependencies:
 
@@ -57,7 +57,7 @@ To prevent cost abuse and spam on the public `/act` backend endpoint, an **in-me
 
 ---
 
-## 3. GitHub Pages Demo Hosting (Prompt 93)
+## 3. GitHub Pages Demo Hosting
 
 The interactive test pages are hosted on GitHub Pages directly from the `demo-page/` directory.
 
@@ -72,7 +72,7 @@ Both HTML pages use self-contained CSS, embedded SVG data URLs for webcam fallba
 
 ---
 
-## 4. Extension Backend URL Configuration (Prompt 90)
+## 4. Extension Backend URL Configuration
 
 The extension allows users to dynamically switch between local and deployed backend endpoints from the **Policy** tab:
 
