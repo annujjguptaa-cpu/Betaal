@@ -158,9 +158,21 @@ function getSimulatedDecisionFromDOM(domStructure, goal) {
     });
   }
 
-  const best = scored[0].el;
-  const selector = buildSelector(best);
-  const label = best.text || best.label || best.placeholder || best.id || best.name || best.tag;
+  // Filter out elements that are already filled if they are text inputs
+  const emptyScored = scored.filter(({ el }) => {
+    const tag = (el.tag || '').toLowerCase();
+    const type = (el.type || '').toLowerCase();
+    const isTextInput = tag === 'input' && ['text', 'email', 'tel', 'number', 'date'].includes(type);
+    if (isTextInput && el.liveValue && el.liveValue.trim().length > 0) {
+      return false; // Already filled!
+    }
+    return true;
+  });
+
+  const targetList = emptyScored.length > 0 ? emptyScored : scored;
+  const best = targetList[0].el;
+  const selector = best.selector || buildSelector(best);
+  const label = best.text || best.label || best.placeholder || best.id || best.name || best.tag || '';
 
   // Determine action: type for text inputs, click for everything else
   const tag = (best.tag || '').toLowerCase();
@@ -175,22 +187,22 @@ function getSimulatedDecisionFromDOM(domStructure, goal) {
       selector,
       value: isSensitive ? undefined : '',
       valueSource: isSensitive ? 'name' : undefined,
-      reasoning: `VLM (Simulated): Found input field "${label}" — filling with profile value.`,
+      reasoning: `VLM (Simulated): Found empty input field "${label}" — filling value.`,
       final: false,
       confidence: 0.7
     });
   }
 
-  // Check if this looks like a final submit button
-  const submitSignals = ['submit', 'send', 'apply', 'lodge', 'register', 'confirm'];
-  const isFinalAction = submitSignals.some(w => (label || '').toLowerCase().includes(w));
+  // Check if this looks like a final submit/search button
+  const submitSignals = ['submit', 'send', 'apply', 'lodge', 'register', 'confirm', 'search', 'track'];
+  const isFinalAction = submitSignals.some(w => label.toLowerCase().includes(w) || (best.id || '').toLowerCase().includes(w));
 
   return JSON.stringify({
     action: 'click',
     selector,
-    reasoning: `VLM (Simulated): Clicking "${label}" — best match for goal "${goal}".`,
+    reasoning: `VLM (Simulated): Clicking "${label || selector}" to submit form / continue task.`,
     final: isFinalAction,
-    confidence: scored[0].score > 30 ? 0.85 : 0.65
+    confidence: best.score > 30 ? 0.85 : 0.65
   });
 }
 
@@ -258,8 +270,8 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
     ? redactedImageBase64 
     : `data:image/png;base64,${base64Image}`;
 
-  // 1. Try Groq Key Pool first (vision-capable model with large context)
-  const groqModel = process.env.GROQ_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct';
+  // 1. Try Groq Key Pool first (Fast & Reliable Llama 3.3 70B model)
+  const groqModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
   // Groq has a ~20k token limit for images. Downscale if image is too large.
   // base64Image at 244KB → ~340KB text → ~85k tokens. Must compress before sending.
