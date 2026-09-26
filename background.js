@@ -692,6 +692,16 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
 
         addLoopLog(`⏳ Executing action [${actionResponse.action}] on selector "${actionResponse.selector}"...`);
         
+        // Render Set-of-Marks overlay on the active tab so numbered bounding boxes and green chosen box appear
+        try {
+          await browser.tabs.sendMessage(activeTab.id, {
+            type: 'RENDER_SOM_OVERLAY',
+            domStructure,
+            chosenSelector: actionResponse.selector,
+            displayMs: 3000
+          });
+        } catch (somErr) {}
+
         let execRes = null;
         try {
           execRes = await browser.tabs.sendMessage(activeTab.id, {

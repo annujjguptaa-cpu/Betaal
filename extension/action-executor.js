@@ -24,14 +24,24 @@ async function executeAction(action) {
     };
   }
 
+  // Calculate target element center coordinates for Agent Cursor animation
+  const rect = el.getBoundingClientRect();
+  const targetX = rect.left + rect.width / 2;
+  const targetY = rect.top + rect.height / 2;
+
+  // Animate agent cursor gliding to element if agent-cursor.js is loaded
+  if (typeof window.animateAgentCursor === 'function') {
+    await window.animateAgentCursor(targetX, targetY, true);
+  }
+
   // Visual highlight indicator (temporary 3px red outline)
   const originalOutline = el.style.outline;
   const originalTransition = el.style.transition;
   el.style.transition = 'outline 0.2s ease-in-out';
   el.style.outline = '3px solid #ef4444';
 
-  // Wait 500ms for demo visual feedback
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  // Wait 300ms for demo visual feedback
+  await new Promise((resolve) => setTimeout(resolve, 300));
 
   try {
     if (action.action === 'click') {
@@ -96,12 +106,17 @@ async function executeAction(action) {
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
 
-      // Reset outline
-      setTimeout(() => { el.style.outline = originalOutline; el.style.transition = originalTransition; }, 1000);
+      // Reset outline & hide cursor
+      setTimeout(() => { 
+        el.style.outline = originalOutline; 
+        el.style.transition = originalTransition; 
+        if (typeof window.hideAgentCursor === 'function') window.hideAgentCursor();
+      }, 1000);
       return { success: true, valueResolution };
 
     } else {
       el.style.outline = originalOutline;
+      if (typeof window.hideAgentCursor === 'function') window.hideAgentCursor();
       return { success: false, error: 'Unsupported action type: ' + action.action };
     }
 
@@ -109,12 +124,14 @@ async function executeAction(action) {
     setTimeout(() => {
       el.style.outline = originalOutline;
       el.style.transition = originalTransition;
+      if (typeof window.hideAgentCursor === 'function') window.hideAgentCursor();
     }, 1000);
 
     return { success: true };
 
   } catch (err) {
     el.style.outline = originalOutline;
+    if (typeof window.hideAgentCursor === 'function') window.hideAgentCursor();
     return { success: false, error: 'Failed to execute action: ' + err.message };
   }
 }
