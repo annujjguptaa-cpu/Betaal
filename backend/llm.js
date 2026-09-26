@@ -91,18 +91,18 @@ function scoreDomElement(el, goalLower, goalWords) {
   }
 
   // Domain-specific form field matching (stations, search, tracking, names)
-  const stationKeywords = ['from', 'to', 'station', 'stn', 'origin', 'dest', 'source', 'src', 'dst', 'search', 'consignment', 'number'];
+  const stationKeywords = ['from', 'to', 'station', 'stn', 'origin', 'dest', 'source', 'src', 'dst', 'consignment', 'number'];
   const isStationOrFormInput = stationKeywords.some(kw => fieldHaystack.includes(kw));
 
   if (isTextInput && isFieldEmpty && isStationOrFormInput) {
     score += 30; // Massive boost for empty station/form input fields matching goal context!
   }
 
-  // Submit-like signals
-  const submitWords = ['submit', 'send', 'proceed', 'continue', 'next', 'apply', 'confirm', 'go', 'lodge', 'register', 'save', 'get train', 'gettrain'];
+  // Submit & Search button signals
+  const submitWords = ['submit', 'search', 'find', 'get train', 'gettrain', 'search trains', 'send', 'proceed', 'continue', 'next', 'apply', 'confirm', 'go', 'lodge', 'register', 'save', 'track'];
   const isSubmitWord = submitWords.some(sw => fieldHaystack.includes(sw));
   if (isSubmitBtn && isSubmitWord) {
-    score += 10;
+    score += 40; // Strongly boost Search / Submit buttons when fields are ready!
   }
 
   // Penalise hidden or unlikely elements
@@ -200,8 +200,8 @@ function getSimulatedDecisionFromDOM(domStructure, goal) {
   }
 
   // Check if this looks like a final submit/search button
-  const submitSignals = ['submit', 'send', 'apply', 'lodge', 'register', 'confirm', 'search', 'track'];
-  const isFinalAction = submitSignals.some(w => label.toLowerCase().includes(w) || (best.id || '').toLowerCase().includes(w));
+  const submitSignals = ['submit', 'send', 'apply', 'lodge', 'register', 'confirm', 'search', 'track', 'find', 'get train', 'gettrain'];
+  const isFinalAction = submitSignals.some(w => label.toLowerCase().includes(w) || (best.id || '').toLowerCase().includes(w) || (best.className || '').toLowerCase().includes(w));
 
   return JSON.stringify({
     action: 'click',
