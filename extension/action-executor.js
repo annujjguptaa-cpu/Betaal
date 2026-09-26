@@ -100,18 +100,36 @@ async function executeAction(action) {
         );
       }
 
-      // Actually type the resolved value
+      // Focus and clear element before typing
       el.focus();
-      el.value = resolvedValue;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.value = '';
+
+      // Type character-by-character with realistic human delay (35ms - 65ms per char)
+      const textToType = String(resolvedValue || '');
+      for (let i = 0; i < textToType.length; i++) {
+        const char = textToType.charAt(i);
+        el.value += char;
+
+        // Dispatch synthetic KeyboardEvent, input event for real-time reactivity
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keypress', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true }));
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keyup', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true }));
+
+        // Random delay between keystrokes (40ms average)
+        const charDelay = Math.floor(Math.random() * 30) + 35;
+        await new Promise((resolve) => setTimeout(resolve, charDelay));
+      }
+
+      // Final change event after typing complete
       el.dispatchEvent(new Event('change', { bubbles: true }));
 
-      // Reset outline & hide cursor
+      // Reset outline & hide cursor after brief delay
       setTimeout(() => { 
         el.style.outline = originalOutline; 
         el.style.transition = originalTransition; 
         if (typeof window.hideAgentCursor === 'function') window.hideAgentCursor();
-      }, 1000);
+      }, 800);
       return { success: true, valueResolution };
 
     } else {
