@@ -270,89 +270,91 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
     ? redactedImageBase64 
     : `data:image/png;base64,${base64Image}`;
 
-  // 1. Try Groq Key Pool first (Fast & Reliable Llama 3.3 70B model)
-  const groqModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  // 1. Try Groq Key Pool first with fallback model candidates
+  const groqCandidateModels = process.env.GROQ_MODEL 
+    ? [process.env.GROQ_MODEL, 'llama-3.1-8b-instant', 'llama3-70b-8192', 'mixtral-8x7b-32768']
+    : ['llama-3.1-8b-instant', 'llama3-70b-8192', 'llama-3.3-70b-versatile', 'mixtral-8x7b-32768'];
 
-  // Groq has a ~20k token limit for images. Downscale if image is too large.
-  // base64Image at 244KB → ~340KB text → ~85k tokens. Must compress before sending.
-  // Strategy: if base64 > 80KB, send text-only (DOM is sufficient for decision).
   const imageBase64Len = base64Image.length;
-  const groqSupportsImage = imageBase64Len < 80000; // ~60KB raw image
+  const groqSupportsImage = imageBase64Len < 80000;
   console.log(`[VLM] Image size: ${Math.round(imageBase64Len / 1024)}KB base64. Groq image mode: ${groqSupportsImage ? 'ON' : 'OFF (text-only)'}`);
 
   for (let j = 0; j < groqKeys.length; j++) {
     const key = groqKeys[j];
     console.log(`[VLM] Trying Groq API Key ${j + 1}/${groqKeys.length}...`);
 
-    try {
-      const groqClient = new Groq({ apiKey: key });
+    for (const groqModel of groqCandidateModels) {
+      try {
+        const groqClient = new Groq({ apiKey: key });
+        const messageContent = groqSupportsImage
+          ? [
+              { type: 'text', text: promptText },
+              { type: 'image_url', image_url: { url: dataUrl } }
+            ]
+          : promptText;
 
-      // Build message content — include image only if it's small enough
-      const messageContent = groqSupportsImage
-        ? [
-            { type: 'text', text: promptText },
-            { type: 'image_url', image_url: { url: dataUrl } }
-          ]
-        : promptText; // text-only string — DOM structure gives the VLM all it needs
+        const chatCompletion = await groqClient.chat.completions.create({
+          model: groqModel,
+          messages: [{ role: 'user', content: messageContent }],
+          max_tokens: 1024
+        });
 
-      const chatCompletion = await groqClient.chat.completions.create({
-        model: groqModel,
-        messages: [{ role: 'user', content: messageContent }],
-        max_tokens: 1024
-      });
-
-      const rawContent = chatCompletion.choices?.[0]?.message?.content;
-      if (rawContent) {
-        console.log(`[VLM] Groq API Key ${j + 1} succeeded with model '${groqModel}'.`);
-        return rawContent;
-      }
-    } catch (groqErr) {
-      const status = groqErr.status || groqErr.statusCode || (groqErr.message?.includes('404') ? 404 : 500);
-      const msg = groqErr.message || '';
-      console.warn(`[VLM] Groq Key ${j + 1} failed (${status}): ${msg.slice(0, 120)}`);
-
-      if (isConfigError(status, msg)) {
-        console.warn(`[VLM] Groq model config error, skipping remaining Groq keys`);
-        break; // Skip remaining Groq keys immediately
+        const rawContent = chatCompletion.choices?.[0]?.message?.content;
+        if (rawContent) {
+          console.log(`[VLM] Groq API Key ${j + 1} succeeded with model '${groqModel}'.`);
+          return rawContent;
+        }
+      } catch (groqErr) {
+        const status = groqErr.status || groqErr.statusCode || (groqErr.message?.includes('404') ? 404 : 500);
+        const msg = groqErr.message || '';
+        console.warn(`[VLM] Groq Key ${j + 1} with model '${groqModel}' failed (${status}): ${msg.slice(0, 100)}`);
+        if (status === 404 || msg.includes('does not exist') || msg.includes('not_found')) {
+          continue; // Try next candidate model for this key
+        }
+        break; // Key rate limited or network error — move to next key
       }
     }
   }
 
-  // 2. Try Gemini Key Pool if Groq fails/exhausted
-  const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
-  
+  // 2. Try Gemini Key Pool with fallback model candidates if Groq fails/exhausted
+  const geminiCandidateModels = process.env.GEMINI_MODEL
+    ? [process.env.GEMINI_MODEL, 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']
+    : ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+
   for (let i = 0; i < geminiKeys.length; i++) {
     const key = geminiKeys[i];
     console.log(`[VLM] Trying Gemini API Key ${i + 1}/${geminiKeys.length}...`);
 
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${key}`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: 'image/png', data: base64Image } }] }]
-        })
-      });
+    for (const geminiModel of geminiCandidateModels) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${key}`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: 'image/png', data: base64Image } }] }]
+          })
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (rawContent) {
-          console.log(`[VLM] Gemini Key ${i + 1} succeeded with model '${geminiModel}'.`);
-          return rawContent;
+        if (response.ok) {
+          const data = await response.json();
+          const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawContent) {
+            console.log(`[VLM] Gemini Key ${i + 1} succeeded with model '${geminiModel}'.`);
+            return rawContent;
+          }
+        } else {
+          const errText = await response.text();
+          console.warn(`[VLM] Gemini Key ${i + 1} model '${geminiModel}' failed (${response.status}): ${errText.slice(0, 100)}`);
+          if (response.status === 404 || errText.includes('not found') || errText.includes('no longer available')) {
+            continue; // Try next model candidate for this key
+          }
+          break; // Key rate limited or 503 overload — move to next key
         }
-      } else {
-        const errText = await response.text();
-        console.warn(`[VLM] Gemini Key ${i + 1} failed (${response.status}): ${errText.slice(0, 120)}...`);
-
-        if (isConfigError(response.status, errText)) {
-          console.warn(`[VLM] Gemini model misconfigured, skipping remaining Gemini keys`);
-          break; // Skip remaining Gemini keys immediately
-        }
+      } catch (geminiErr) {
+        console.warn(`[VLM] Gemini Key ${i + 1} network error: ${geminiErr.message}.`);
+        break;
       }
-    } catch (geminiErr) {
-      console.warn(`[VLM] Gemini Key ${i + 1} network error: ${geminiErr.message}. Rotating...`);
     }
   }
 
