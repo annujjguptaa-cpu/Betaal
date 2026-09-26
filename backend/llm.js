@@ -68,40 +68,46 @@ function scoreDomElement(el, goalLower, goalWords) {
   const role = (el.role || '').toLowerCase();
   const autocomplete = (el.autocomplete || '').toLowerCase();
 
-  // Strongly prefer interactive elements
-  if (tag === 'button') score += 20;
-  if (tag === 'a') score += 10;
-  if (tag === 'input' && ['submit', 'button'].includes(type)) score += 20;
-  if (tag === 'input' && ['text', 'email', 'tel', 'number', 'date'].includes(type)) score += 12;
-  if (tag === 'textarea') score += 10;
-  if (tag === 'select') score += 8;
-  if (role === 'button') score += 15;
+  // Interactive element base scores
+  const isTextInput = (tag === 'input' && ['text', 'email', 'tel', 'number', 'date', 'search', ''].includes(type)) || tag === 'textarea';
+  const isSelect = tag === 'select' || role === 'combobox' || role === 'listbox';
+  const isSubmitBtn = tag === 'button' || (tag === 'input' && ['submit', 'button'].includes(type)) || role === 'button';
 
-  // Keyword matching: goal words found in element text/id/name
+  const isFieldEmpty = !el.liveValue || el.liveValue.trim() === '';
+
+  if (isTextInput) {
+    score += isFieldEmpty ? 35 : 5; // Strongly prefer empty text inputs over buttons!
+  } else if (isSelect) {
+    score += isFieldEmpty ? 25 : 5;
+  } else if (isSubmitBtn) {
+    score += 15;
+  }
+
+  // Keyword matching: goal words found in element text/id/name/placeholder/ariaLabel
+  const fieldHaystack = `${id} ${name} ${text} ${autocomplete} ${el.placeholder || ''} ${el.ariaLabel || ''}`.toLowerCase();
   for (const word of goalWords) {
     if (word.length < 3) continue;
-    if (text.includes(word)) score += 8;
-    if (id.includes(word)) score += 6;
-    if (name.includes(word)) score += 6;
-    if (autocomplete.includes(word)) score += 4;
+    if (fieldHaystack.includes(word)) score += 12;
+  }
+
+  // Domain-specific form field matching (stations, search, tracking, names)
+  const stationKeywords = ['from', 'to', 'station', 'stn', 'origin', 'dest', 'source', 'src', 'dst', 'search', 'consignment', 'number'];
+  const isStationOrFormInput = stationKeywords.some(kw => fieldHaystack.includes(kw));
+
+  if (isTextInput && isFieldEmpty && isStationOrFormInput) {
+    score += 30; // Massive boost for empty station/form input fields matching goal context!
   }
 
   // Submit-like signals
-  const submitWords = ['submit', 'send', 'proceed', 'continue', 'next', 'apply', 'confirm', 'go', 'lodge', 'register', 'save'];
-  for (const sw of submitWords) {
-    if (text.includes(sw)) score += 10;
-    if (id.includes(sw)) score += 8;
-    if (name.includes(sw)) score += 8;
+  const submitWords = ['submit', 'send', 'proceed', 'continue', 'next', 'apply', 'confirm', 'go', 'lodge', 'register', 'save', 'get train', 'gettrain'];
+  const isSubmitWord = submitWords.some(sw => fieldHaystack.includes(sw));
+  if (isSubmitBtn && isSubmitWord) {
+    score += 10;
   }
-
-  // Fill-like signals: prefer empty inputs when goal is about filling
-  const fillWords = ['fill', 'enter', 'complete', 'type'];
-  const goalIsFill = fillWords.some(w => goalLower.includes(w));
-  if (goalIsFill && tag === 'input' && ['text', 'email', 'tel', 'number'].includes(type)) score += 5;
 
   // Penalise hidden or unlikely elements
   if (type === 'hidden') score -= 50;
-  if (tag === 'div' || tag === 'span') score -= 5;
+  if (tag === 'div' || tag === 'span') score -= 10;
 
   return score;
 }
