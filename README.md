@@ -11,6 +11,20 @@
 
 ---
 
+## 🎥 Demonstration Video & Proof
+
+> **📺 Watch Online Demonstration**: [YOUR_VIDEO_URL_HERE (e.g. YouTube / Drive / Loom Link)]  
+> **📁 Repository Video Proof File**: [`videos/betaal-demo.mp4`](./videos/betaal-demo.mp4)
+
+> [!NOTE]
+> ### 📝 How to Add Your Video & Link:
+> 1. Record your screen while running a goal on **India Post**, **IRCTC**, or **UIDAI**.
+> 2. Copy the `.mp4` file into the `videos/` folder and name it `betaal-demo.mp4`.
+> 3. Replace `YOUR_VIDEO_URL_HERE` above with your online link (YouTube / Google Drive / Loom).
+> 4. Run `git add videos/betaal-demo.mp4 README.md && git commit -m "docs: add demo video proof" && git push origin main`.
+
+---
+
 ## 📋 Problem Statement & Overview
 
 * **Hackathon**: Smart India Hackathon (SIH) 2026

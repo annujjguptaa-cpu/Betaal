@@ -95,46 +95,85 @@ async function executeAction(action) {
         resolvedValue = action.value || '';
         valueResolution = 'vlm-provided';
 
-        // Fallback: extract tracking/consignment code from goal — must contain both letters AND digits
-        // to avoid matching plain words like "DELIVERY", "TRACK", etc.
+        // Fallback resolution if VLM left action.value empty
         if (!resolvedValue && window.__betaalCurrentGoal) {
-          const tokens = window.__betaalCurrentGoal.match(/\b[A-Z0-9]{8,20}\b/gi) || [];
-          const trackingCode = tokens.find(t => /[A-Z]/i.test(t) && /\d/.test(t));
-          if (trackingCode) {
-            resolvedValue = trackingCode;
-            console.log(`[ActionExecutor] Fallback extracted tracking code "${resolvedValue}" from goal string.`);
+          const goal = window.__betaalCurrentGoal;
+          const selectorLower = (action.selector || '').toLowerCase();
+          const placeholderLower = (el.placeholder || '').toLowerCase();
+          const ariaLower = (el.getAttribute('aria-label') || '').toLowerCase();
+          const combinedField = `${selectorLower} ${placeholderLower} ${ariaLower}`;
+
+          // Station / Origin extraction for train / flight search
+          if (combinedField.includes('from') || combinedField.includes('origin') || combinedField.includes('source') || combinedField.includes('starting')) {
+            const match = goal.match(/between\s+([A-Za-z0-9\s()]+?)\s+and/i) || goal.match(/from\s+([A-Za-z0-9\s()]+?)\s+to/i);
+            if (match) resolvedValue = match[1].trim();
+          } else if (combinedField.includes('to') || combinedField.includes('dest') || combinedField.includes('arrival') || combinedField.includes('destination')) {
+            const match = goal.match(/and\s+([A-Za-z0-9\s()]+?)(?:\s+for|\s+on|\s*$)/i) || goal.match(/to\s+([A-Za-z0-9\s()]+?)(?:\s+for|\s+on|\s*$)/i);
+            if (match) resolvedValue = match[1].trim();
+          }
+
+          // Fallback tracking code / alphanumeric token extraction
+          if (!resolvedValue) {
+            const tokens = goal.match(/\b[A-Z0-9]{3,20}\b/gi) || [];
+            const code = tokens.find(t => /[A-Z]/i.test(t) && /\d/.test(t)) || tokens.find(t => t.length >= 3 && !['THE', 'FOR', 'AND', 'WITH', 'MY'].includes(t.toUpperCase()));
+            if (code) resolvedValue = code;
+          }
+
+          if (resolvedValue) {
+            console.log(`[ActionExecutor] Fallback extracted value "${resolvedValue}" from goal for field [${action.selector}].`);
           }
         }
 
         console.log(
-          `[ActionExecutor] TYPE on "${action.selector}" — value from VLM/Goal (non-sensitive field). ` +
-          `Value: "${resolvedValue}"`
+          `[ActionExecutor] TYPE on "${action.selector}" — value: "${resolvedValue}"`
         );
       }
 
+      // Native setter helper for Angular, React, Vue, PrimeNG (e.g. IRCTC)
+      const setNativeValue = (target, val) => {
+        const prototypeValueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(target), 'value')?.set;
+        const valueSetter = Object.getOwnPropertyDescriptor(target, 'value')?.set;
+        if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
+          prototypeValueSetter.call(target, val);
+        } else if (valueSetter) {
+          valueSetter.call(target, val);
+        } else {
+          target.value = val;
+        }
+      };
+
       // Focus and clear element before typing
       el.focus();
-      el.value = '';
+      setNativeValue(el, '');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
 
-      // Type character-by-character with realistic human delay (35ms - 65ms per char)
+      // Type character-by-character with realistic human delay
       const textToType = String(resolvedValue || '');
+      let currentVal = '';
       for (let i = 0; i < textToType.length; i++) {
         const char = textToType.charAt(i);
-        el.value += char;
+        currentVal += char;
+        setNativeValue(el, currentVal);
 
-        // Dispatch synthetic KeyboardEvent, input event for real-time reactivity
-        el.dispatchEvent(new KeyboardEvent('keydown', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true }));
-        el.dispatchEvent(new KeyboardEvent('keypress', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true }));
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new KeyboardEvent('keyup', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true }));
+        // Dispatch synthetic KeyboardEvent, InputEvent for Angular/React/PrimeNG binding
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true, cancelable: true }));
+        el.dispatchEvent(new KeyboardEvent('keypress', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true, cancelable: true }));
+        el.dispatchEvent(new InputEvent('input', { data: char, inputType: 'insertText', bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keyup', { key: char, code: `Key${char.toUpperCase()}`, bubbles: true, cancelable: true }));
 
-        // Random delay between keystrokes (40ms average)
-        const charDelay = Math.floor(Math.random() * 30) + 35;
+        const charDelay = Math.floor(Math.random() * 25) + 30;
         await new Promise((resolve) => setTimeout(resolve, charDelay));
       }
 
-      // Final change event after typing complete
+      // Final change and blur events after typing complete
       el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
+
+      // Autocomplete support for Angular dropdowns (e.g. IRCTC): press DownArrow + Enter to select option
+      setTimeout(() => {
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+      }, 250);
 
       // Reset outline & hide cursor after brief delay
       setTimeout(() => { 
