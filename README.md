@@ -451,6 +451,7 @@ Betaal/
 │   ├── generalization-testing.md  # Real-site testing notes (bank, healthcare, SPA, etc.)
 │   ├── kill-switch-demo.md        # Offline client-side verification steps
 │   ├── model-variants.md          # Fast/Balanced/Accurate model sourcing notes
+│   ├── policy-book.md             # Simplified core execution & governance rulebook
 │   ├── rag-effectiveness.md       # Documented before/after comparison of RAG grounding
 │   └── qa-automated-testing.md    # How to run the autonomous QA suite
 └── package.json
