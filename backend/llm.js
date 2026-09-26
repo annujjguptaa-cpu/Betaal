@@ -219,22 +219,12 @@ const Groq = require('groq-sdk');
  */
 function isConfigError(status, errMessage = '') {
   const msgLower = (errMessage || '').toLowerCase();
-  // Do NOT treat API key errors as config errors (400 API key not valid / 401 invalid_api_key)
-  if (msgLower.includes('api key') || msgLower.includes('invalid_api_key') || status === 401 || status === 403) {
-    return false;
-  }
-  // 413 = payload too large — per-request error, not a model/config issue; skip remaining keys won't help
-  if (status === 413) {
-    return false;
-  }
-  // Model-not-found, 404, or invalid model name errors are config errors
-  if (status === 404 || msgLower.includes('not_found') || msgLower.includes('does not exist')) {
-    return true;
-  }
-  // "model" in message with non-413 non-key errors → config issue
-  if (msgLower.includes('model') && status !== 413 && status !== 429) {
-    return true;
-  }
+  // Per-key transient errors: auth failures, rate limits, overload — rotate keys, do NOT skip provider
+  if (status === 401 || status === 403 || status === 429 || status === 503 || status === 413) return false;
+  if (msgLower.includes('api key') || msgLower.includes('invalid_api_key')) return false;
+  // Config-level errors: wrong model name, model not found — all keys for this provider will fail identically
+  if (status === 404 || msgLower.includes('not_found') || msgLower.includes('does not exist')) return true;
+  if (msgLower.includes('model') && !msgLower.includes('demand') && !msgLower.includes('overload')) return true;
   return false;
 }
 
@@ -268,8 +258,15 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
     ? redactedImageBase64 
     : `data:image/png;base64,${base64Image}`;
 
-  // 1. Try Groq Key Pool first (Fastest & Most Reliable Vision Inference)
-  const groqModel = process.env.GROQ_MODEL || 'qwen/qwen3.8-27b';
+  // 1. Try Groq Key Pool first (vision-capable model with large context)
+  const groqModel = process.env.GROQ_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct';
+
+  // Groq has a ~20k token limit for images. Downscale if image is too large.
+  // base64Image at 244KB → ~340KB text → ~85k tokens. Must compress before sending.
+  // Strategy: if base64 > 80KB, send text-only (DOM is sufficient for decision).
+  const imageBase64Len = base64Image.length;
+  const groqSupportsImage = imageBase64Len < 80000; // ~60KB raw image
+  console.log(`[VLM] Image size: ${Math.round(imageBase64Len / 1024)}KB base64. Groq image mode: ${groqSupportsImage ? 'ON' : 'OFF (text-only)'}`);
 
   for (let j = 0; j < groqKeys.length; j++) {
     const key = groqKeys[j];
@@ -277,17 +274,19 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
 
     try {
       const groqClient = new Groq({ apiKey: key });
+
+      // Build message content — include image only if it's small enough
+      const messageContent = groqSupportsImage
+        ? [
+            { type: 'text', text: promptText },
+            { type: 'image_url', image_url: { url: dataUrl } }
+          ]
+        : promptText; // text-only string — DOM structure gives the VLM all it needs
+
       const chatCompletion = await groqClient.chat.completions.create({
         model: groqModel,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: promptText },
-              { type: 'image_url', image_url: { url: dataUrl } }
-            ]
-          }
-        ]
+        messages: [{ role: 'user', content: messageContent }],
+        max_tokens: 1024
       });
 
       const rawContent = chatCompletion.choices?.[0]?.message?.content;
@@ -298,10 +297,10 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
     } catch (groqErr) {
       const status = groqErr.status || groqErr.statusCode || (groqErr.message?.includes('404') ? 404 : 500);
       const msg = groqErr.message || '';
-      console.warn(`[VLM] Groq Key ${j + 1} failed (${status}): ${msg.slice(0, 120)}...`);
+      console.warn(`[VLM] Groq Key ${j + 1} failed (${status}): ${msg.slice(0, 120)}`);
 
       if (isConfigError(status, msg)) {
-        console.warn(`[VLM] Groq model ID invalid, skipping remaining Groq keys`);
+        console.warn(`[VLM] Groq model config error, skipping remaining Groq keys`);
         break; // Skip remaining Groq keys immediately
       }
     }
