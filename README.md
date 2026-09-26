@@ -295,15 +295,32 @@ Before any network request is built:
 
 ## 📸 See It Work (Live Interface Showcase)
 
-| 🖥️ **Betaal Extension Interface** | ⚙️ **Runtime Policy Book Configuration** |
-| :---: | :---: |
-| ![Betaal Interface](qa-results/Betaal.png) | ![Betaal Policy Book](qa-results/BetaalPolicy.png) |
-| *Main extension interface featuring live goal execution, status telemetry, and active mode controls.* | *Runtime-editable redaction policy book for custom PII rules, face detection modes, and per-site overrides.* |
-
-| ⚡ **Autonomous Execution & Redaction Loop** | 👤 **Local Profile & Zero-Trust Value Store** |
-| :---: | :---: |
-| ![Betaal Execution Loop](qa-results/BetaalExecution.png) | ![Betaal Local Profile](qa-results/BetaalProfile.png) |
-| *Real-time step activity feed showing on-device redaction telemetry, timing benchmarks, and Set-of-Marks overlays.* | *On-device sensitive identity store resolving values locally via valueSource without sending PII over the network.* |
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <b>🖥️ Betaal Extension Interface</b><br/><br/>
+      <img src="qa-results/Betaal.png" alt="Betaal Extension Interface" width="100%"/><br/>
+      <sub><i>Main extension interface featuring live goal execution, status telemetry, and active mode controls.</i></sub>
+    </td>
+    <td align="center" width="50%">
+      <b>⚙️ Runtime Policy Book Configuration</b><br/><br/>
+      <img src="qa-results/BetaalPolicy.png" alt="Betaal Policy Book" width="100%"/><br/>
+      <sub><i>Runtime-editable redaction policy book for custom PII rules, face detection modes, and per-site overrides.</i></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <b>⚡ Autonomous Execution & Redaction Loop</b><br/><br/>
+      <img src="qa-results/BetaalExecution.png" alt="Betaal Execution Loop" width="100%"/><br/>
+      <sub><i>Real-time step activity feed showing on-device redaction telemetry, timing benchmarks, and Set-of-Marks overlays.</i></sub>
+    </td>
+    <td align="center" width="50%">
+      <b>👤 Local Profile & Zero-Trust Value Store</b><br/><br/>
+      <img src="qa-results/BetaalProfile.png" alt="Betaal Local Profile" width="100%"/><br/>
+      <sub><i>On-device sensitive identity store resolving values locally via valueSource without sending PII over the network.</i></sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
