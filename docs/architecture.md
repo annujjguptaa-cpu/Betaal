@@ -6,7 +6,7 @@ flowchart TD
         UI[Popup UI] -->|User selects mode| Policy[Policy Store]
         UI -->|Run Agent| Capture[Capture Screenshot]
         Capture --> Pipeline[processScreenshot]
-        Pipeline -->|Load Model| LoadModel[loadFaceModel (per‑model cache)]
+        Pipeline -->|Load Model| LoadModel["loadFaceModel (per-model cache)"]
         Pipeline -->|Detect Faces| FaceDetect[detectFaces]
         Pipeline -->|Detect PII| PIIDetect[detectSensitivePII]
         Pipeline -->|(optional) Classify| ViT[ViT Classifier]
