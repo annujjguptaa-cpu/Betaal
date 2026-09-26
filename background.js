@@ -203,7 +203,14 @@ async function verifyContentScriptLiveness(tabId, timeoutMs = 3000) {
       console.log('[Background] Content script unpinned/unresponsive, attempting re-injection...');
       await browser.scripting.executeScript({
         target: { tabId },
-        files: ['extension/browser-polyfill.js', 'extension/action-executor.js', 'content.js']
+        files: [
+          'extension/browser-polyfill.js',
+          'extension/som-overlay.js',
+          'extension/agent-cursor.js',
+          'extension/local-profile.js',
+          'extension/action-executor.js',
+          'content.js'
+        ]
       });
       // Re-test PING
       const retryRes = await browser.tabs.sendMessage(tabId, { type: 'PING' });
@@ -512,7 +519,14 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         addLoopLog('⚠️ Content script not ready on page. Attempting auto-injection...');
         await browser.scripting.executeScript({
           target: { tabId: activeTab.id },
-          files: ['extension/browser-polyfill.js', 'extension/action-executor.js', 'content.js']
+          files: [
+            'extension/browser-polyfill.js',
+            'extension/som-overlay.js',
+            'extension/agent-cursor.js',
+            'extension/local-profile.js',
+            'extension/action-executor.js',
+            'content.js'
+          ]
         });
         const retryDom = await browser.tabs.sendMessage(activeTab.id, { type: 'GET_DOM_STRUCTURE' });
         domStructure = (retryDom && retryDom.success) ? retryDom.domStructure : [];

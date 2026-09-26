@@ -127,10 +127,11 @@
     domStructure.forEach((item, idx) => {
       if (!item.rect) return;
 
-      const isChosen = chosenEl && (
+      const isChosen = chosenSelector && (
+        (chosenEl && chosenEl === document.querySelector(item.id ? `#${item.id}` : (item.name ? `[name="${item.name}"]` : item.tag))) ||
         (item.id && chosenSelector === `#${item.id}`) ||
-        (item.name && chosenSelector === `[name="${item.name}"]`) ||
-        (item.tag && chosenSelector.includes(item.tag))
+        (item.name && chosenSelector.includes(item.name)) ||
+        (item.id && chosenSelector.includes(item.id))
       );
 
       const box = document.createElement('div');
