@@ -9,7 +9,7 @@ flowchart TD
         Pipeline -->|Load Model| LoadModel["loadFaceModel (per-model cache)"]
         Pipeline -->|Detect Faces| FaceDetect[detectFaces]
         Pipeline -->|Detect PII| PIIDetect[detectSensitivePII]
-        Pipeline -->|(optional) Classify| ViT[ViT Classifier]
+        Pipeline -->|"(optional) Classify"| ViT[ViT Classifier]
         Pipeline -->|Redact| Redact[redactImage]
         Pipeline -->|Result| UI
     end
