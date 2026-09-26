@@ -276,10 +276,10 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
     ? redactedImageBase64 
     : `data:image/png;base64,${base64Image}`;
 
-  // 1. Try Groq Key Pool first with fallback model candidates
+  // 1. Try Groq Key Pool first with active model candidates
   const groqCandidateModels = process.env.GROQ_MODEL 
-    ? [process.env.GROQ_MODEL, 'llama-3.1-8b-instant', 'llama3-70b-8192', 'mixtral-8x7b-32768']
-    : ['llama-3.1-8b-instant', 'llama3-70b-8192', 'llama-3.3-70b-versatile', 'mixtral-8x7b-32768'];
+    ? [process.env.GROQ_MODEL, 'llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'llama-3.2-11b-vision-preview', 'mixtral-8x7b-32768', 'gemma2-9b-it']
+    : ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'llama-3.2-11b-vision-preview', 'mixtral-8x7b-32768', 'gemma2-9b-it'];
 
   const imageBase64Len = base64Image.length;
   const groqSupportsImage = imageBase64Len < 80000;
@@ -314,7 +314,7 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
         const status = groqErr.status || groqErr.statusCode || (groqErr.message?.includes('404') ? 404 : 500);
         const msg = groqErr.message || '';
         console.warn(`[VLM] Groq Key ${j + 1} with model '${groqModel}' failed (${status}): ${msg.slice(0, 100)}`);
-        if (status === 404 || msg.includes('does not exist') || msg.includes('not_found')) {
+        if (status === 404 || status === 400 || msg.includes('does not exist') || msg.includes('decommissioned') || msg.includes('not_found')) {
           continue; // Try next candidate model for this key
         }
         break; // Key rate limited or network error — move to next key
@@ -322,10 +322,10 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
     }
   }
 
-  // 2. Try Gemini Key Pool with fallback model candidates if Groq fails/exhausted
+  // 2. Try Gemini Key Pool with active fallback model candidates if Groq fails/exhausted
   const geminiCandidateModels = process.env.GEMINI_MODEL
-    ? [process.env.GEMINI_MODEL, 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']
-    : ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+    ? [process.env.GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.5-pro']
+    : ['gemini-2.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.5-pro'];
 
   for (let i = 0; i < geminiKeys.length; i++) {
     const key = geminiKeys[i];
