@@ -19,8 +19,8 @@ flowchart TD
         Quant -->|Copies| BalancedModel[face_detector_balanced.onnx]
     end
     
-    Browser Extension -->|Uses| FastModel
-    Browser Extension -->|Uses| BalancedModel
+    LoadModel -->|Uses| FastModel
+    LoadModel -->|Uses| BalancedModel
 ```
 
 **Explanation**
