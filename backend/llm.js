@@ -260,45 +260,7 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
     ? redactedImageBase64 
     : `data:image/png;base64,${base64Image}`;
 
-  // 1. Try Gemini Key Pool
-  const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
-  
-  for (let i = 0; i < geminiKeys.length; i++) {
-    const key = geminiKeys[i];
-    console.log(`[VLM] Trying Gemini API Key ${i + 1}/${geminiKeys.length}...`);
-
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${key}`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: 'image/png', data: base64Image } }] }]
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (rawContent) {
-          console.log(`[VLM] Gemini Key ${i + 1} succeeded with model '${geminiModel}'.`);
-          return rawContent;
-        }
-      } else {
-        const errText = await response.text();
-        console.warn(`[VLM] Gemini Key ${i + 1} failed (${response.status}): ${errText.slice(0, 120)}...`);
-
-        if (isConfigError(response.status, errText)) {
-          console.warn(`[VLM] Gemini model misconfigured, skipping remaining Gemini keys`);
-          break; // Skip remaining Gemini keys immediately
-        }
-      }
-    } catch (geminiErr) {
-      console.warn(`[VLM] Gemini Key ${i + 1} network error: ${geminiErr.message}. Rotating...`);
-    }
-  }
-
-  // 2. Try Groq Key Pool if Gemini failed/exhausted
+  // 1. Try Groq Key Pool first (Fastest & Most Reliable Vision Inference)
   const groqModel = process.env.GROQ_MODEL || 'qwen/qwen3.8-27b';
 
   for (let j = 0; j < groqKeys.length; j++) {
@@ -334,6 +296,44 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
         console.warn(`[VLM] Groq model ID invalid, skipping remaining Groq keys`);
         break; // Skip remaining Groq keys immediately
       }
+    }
+  }
+
+  // 2. Try Gemini Key Pool if Groq fails/exhausted
+  const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+  
+  for (let i = 0; i < geminiKeys.length; i++) {
+    const key = geminiKeys[i];
+    console.log(`[VLM] Trying Gemini API Key ${i + 1}/${geminiKeys.length}...`);
+
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${key}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: 'image/png', data: base64Image } }] }]
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawContent) {
+          console.log(`[VLM] Gemini Key ${i + 1} succeeded with model '${geminiModel}'.`);
+          return rawContent;
+        }
+      } else {
+        const errText = await response.text();
+        console.warn(`[VLM] Gemini Key ${i + 1} failed (${response.status}): ${errText.slice(0, 120)}...`);
+
+        if (isConfigError(response.status, errText)) {
+          console.warn(`[VLM] Gemini model misconfigured, skipping remaining Gemini keys`);
+          break; // Skip remaining Gemini keys immediately
+        }
+      }
+    } catch (geminiErr) {
+      console.warn(`[VLM] Gemini Key ${i + 1} network error: ${geminiErr.message}. Rotating...`);
     }
   }
 
