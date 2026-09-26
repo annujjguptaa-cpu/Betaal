@@ -816,6 +816,20 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
       // Check if action was marked final by VLM
       if (actionResponse.final) {
         addLoopLog('🎉 Task marked as complete by VLM!');
+
+        // Fire a system notification to let the user know the task finished
+        const chromeApiLocal = typeof chrome !== 'undefined' ? chrome : {};
+        if (chromeApiLocal.notifications) {
+          chromeApiLocal.notifications.create('betaal_done_' + Date.now(), {
+            type: 'basic',
+            iconUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSU5EUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+            title: '✅ Betaal — Task Complete',
+            message: agentLoopState.goal
+              ? `Done: "${agentLoopState.goal.slice(0, 100)}"`
+              : 'Your task has been completed successfully.',
+            priority: 2
+          });
+        }
         break;
       }
     }

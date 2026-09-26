@@ -98,6 +98,7 @@ Determine the SINGLE next UI action to make progress toward the goal.
 === VALUE SOURCING RULES ===
 - For "type" on a [SENSITIVE] field: return "value": null and "valueSource": "<key>" from [${profileKeys}]. The executor resolves it locally — never put real PII in your response.
 - For "type" on a NON-sensitive field (search box, comment, quantity, message): return "value": "<text>".
+- IMPORTANT: Tracking numbers, consignment IDs, reference codes, order IDs, and booking numbers are ALWAYS non-sensitive. Extract the exact code from the USER GOAL and put it directly in "value". NEVER return "valueSource" for these fields.
 
 === TASK CHECKLIST RULES ===
 - Create or update a high-level 3 to 5 step task checklist in the "checklist" array field.

@@ -49,6 +49,21 @@ function needsHumanIntervention(action, context = {}) {
     };
   }
 
+  // Trigger 5 (HITL-205): CAPTCHA / verification widget detected in DOM
+  const captchaKeywords = ['captcha', 'recaptcha', 'hcaptcha', 'verification', 'verify', 'security-check', 'bot-check'];
+  const hasCaptcha = domStructure.some(el => {
+    const haystack = [el.id, el.name, el.ariaLabel, el.text, el.placeholder, el.dataTestId]
+      .filter(Boolean).join(' ').toLowerCase();
+    return captchaKeywords.some(kw => haystack.includes(kw));
+  });
+
+  if (hasCaptcha) {
+    return {
+      needed: true,
+      reason: 'CAPTCHA or verification widget detected on the page. Please solve it manually, then click Approve to continue.'
+    };
+  }
+
   return { needed: false, reason: null };
 }
 
