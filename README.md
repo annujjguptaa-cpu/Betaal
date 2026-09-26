@@ -74,7 +74,7 @@ flowchart TD
 
     subgraph BackendServer ["☁️ Express Backend — Zero Persistence"]
         Q --> R{API Key Available?}
-        R -- Yes --> S[Call Gemini / Claude VLM — Prompt Grounded with RAG Examples]
+        R -- Yes --> S[Call Gemini / Claude VLM — Context Grounded with RAG Examples]
         R -- No --> T[Local Simulated VLM Fallback]
         S --> U["Return JSON: action, selector, value or valueSource, final, confidence"]
         T --> U
@@ -88,7 +88,7 @@ flowchart TD
         X --> Y[User Approves, Stops, or Sends Correction via Notifications Tab / Inline Feed Card]
         Y -- Approved/Corrected --> Z
         W -- No --> Z[Re-Validate Selector Exists Right Before Acting]
-        Z -- Missing --> AA["Re-Prompt Backend with Live DOM (Max 2 Retries)"]
+        Z -- Missing --> AA["Re-Query Backend with Live DOM (Max 2 Retries)"]
         AA --> U
         Z -- Valid --> AB{Action Type}
         AB -- type + valueSource set --> AC[Resolve REAL Value Locally from Local Profile — Never Sent to Cloud]
@@ -242,12 +242,12 @@ Before any network request is built:
 ### 3. Grounded Reasoning (DOM + RAG + VLM)
 - The content script extracts interactive elements (`input`, `button`, `textarea`, `select`), including accessible Shadow DOM content, capped at 50 elements.
 - A structural signature of the current page (field count, types, button labels — no values) is computed and used to retrieve the most similar successful past runs from the local Vault.
-- The redacted image, DOM structure, goal, and these retrieved examples are sent to the backend, which builds a prompt instructing the VLM to use the examples as precedent but ground its decision in the actual current structure.
+- The redacted image, DOM structure, goal, and these retrieved examples are sent to the backend, which builds an input context instructing the VLM to use the examples as precedent but ground its decision in the actual current structure.
 - The VLM returns a structured action: `{ "action": "type", "selector": "#citizen-name", "valueSource": "fullName", "final": false, "confidence": 0.95 }`.
 - For fields the DOM marked sensitive, the response carries a `valueSource` key (e.g. `aadhaar`) rather than a literal value — the VLM never saw the real data, so it can't be the source of it.
 
 ### 4. Robust, Self-Correcting Execution
-- Immediately before acting, the selector is re-validated against the live DOM (not just checked once) — if it's gone stale, the agent re-prompts the backend with the current structure, up to 2 retries.
+- Immediately before acting, the selector is re-validated against the live DOM (not just checked once) — if it's gone stale, the agent re-queries the backend with the current structure, up to 2 retries.
 - For a `type` action with `valueSource` set, the real value is resolved locally from the Local Profile — it never touches the network, in either direction.
 - Actions execute with a brief red-outline highlight and a small human-like pacing delay between steps.
 
@@ -347,7 +347,7 @@ Betaal is built for general-purpose browsing, not just its own demo pages:
 - **Broader PII coverage**: Aadhaar, PAN, phone, email, plus a generic fallback catching any 9+ digit sequence (covering formats like SSNs or card numbers not individually pattern-matched)
 - **Restricted pages**: `chrome://`, the Web Store, and similar system pages are detected up front and handled with a clean, friendly message instead of a crash
 - **Selector self-correction**: if a chosen element no longer matches the live DOM, the agent re-sends the real structure and asks for a corrected selector, up to 2 retries, before falling back to asking the user
-- **Verified independently**: see `docs/qa-automated-testing.md` for the autonomous QA prompt used to test the extension against real, unfamiliar live sites and produce a structured pass/fail report
+- **Verified independently**: see `docs/qa-automated-testing.md` for the autonomous QA suite used to test the extension against real, unfamiliar live sites and produce a structured pass/fail report
 
 ---
 
@@ -438,7 +438,7 @@ Betaal/
 ├── backend/
 │   ├── server.js                  # Express server, CORS, zero-persistence
 │   ├── llm.js                     # VLM API caller & JSON response parser
-│   └── llm-prompt.js              # Privacy-aware, RAG-grounded prompt builder
+│   └── llm-prompt.js              # Privacy-aware, RAG-grounded context builder
 ├── demo-page/
 │   ├── index.html                 # Mock citizen grievance portal + webcam tile
 │   └── passport-application.html  # Multi-step wizard demonstrating the full agent loop
@@ -452,7 +452,7 @@ Betaal/
 │   ├── kill-switch-demo.md        # Offline client-side verification steps
 │   ├── model-variants.md          # Fast/Balanced/Accurate model sourcing notes
 │   ├── rag-effectiveness.md       # Documented before/after comparison of RAG grounding
-│   └── qa-automated-testing.md    # How to run the autonomous QA prompt
+│   └── qa-automated-testing.md    # How to run the autonomous QA suite
 └── package.json
 ```
 
@@ -513,7 +513,7 @@ npm start
 
 | Risk | Mitigation Strategy | Implementation |
 | :--- | :--- | :--- |
-| **Selector Fragility / Dynamic DOM Changes** | Pre-action validation + Self-Correction Retry | Re-validates selector presence in `content.js` immediately before execution. Re-prompts VLM up to 2 times with fresh DOM if missing (`background.js`). |
+| **Selector Fragility / Dynamic DOM Changes** | Pre-action validation + Self-Correction Retry | Re-validates selector presence in `content.js` immediately before execution. Re-queries VLM up to 2 times with fresh DOM if missing (`background.js`). |
 | **Bot Detection & Rate Limiting** | Human-like Pacing & Red Highlight Pointer | Adds deliberate pacing delay (300ms) + smooth animated Agent Cursor gliding to element coordinates (`agent-cursor.js`). |
 | **Trust in Autonomous Decisions** | Mandatory Human-in-the-Loop Interventions | Automatically pauses execution on final/irreversible actions, low confidence (<0.6), file inputs, or repeated failures (`intervention-rules.js`). |
 | **Latency vs. Accuracy Tradeoff** | Switchable Performance Modes | User can switch between `Fast` (MobileNet 4MB / 5ms), `Balanced` (Default ONNX / 45ms), and `Accurate` (1.5x upscaling) at runtime. |
