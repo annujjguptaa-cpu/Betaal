@@ -11,7 +11,7 @@ Betaal's production backend is deployed as a zero-persistence API gateway on Ren
 * **Production Endpoint**: `https://betaal-backend-p8vk.onrender.com`
 * **Health Check Endpoint**: `https://betaal-backend-p8vk.onrender.com/health`
 * **Action Endpoint**: `POST https://betaal-backend-p8vk.onrender.com/act`
-* **Architecture**: Express.js server running in transient memory mode. Features 20 req/hr/IP rate limiting, CORS configuration, multi-key pool rotation (Gemini 2.5/2.0/1.5 Flash & Claude 3.5 Sonnet), and local DOM-aware fallback decision engine when no API keys are present.
+* **Architecture**: Express.js server running in transient memory mode. Features 20 req/hr/IP rate limiting, CORS configuration, multi-key pool rotation (Groq Llama 3.3 70B / Qwen 3.8 27B & Gemini 3.5 Flash), and local DOM-aware fallback decision engine when no API keys are present.
 
 ### How to Configure Betaal Extension to Use Cloud Backend:
 1. Open the Betaal Extension Popup in your browser.

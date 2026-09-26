@@ -14,14 +14,7 @@
 ## 🎥 Demonstration Video & Proof
 
 > **📺 Watch Online Demonstration**: [YOUR_VIDEO_URL_HERE (e.g. YouTube / Drive / Loom Link)]  
-> **📁 Repository Video Proof File**: [`videos/betaal-demo.mp4`](./videos/betaal-demo.mp4)
-
-> [!NOTE]
-> ### 📝 How to Add Your Video & Link:
-> 1. Record your screen while running a goal on **India Post**, **IRCTC**, or **UIDAI**.
-> 2. Copy the `.mp4` file into the `videos/` folder and name it `betaal-demo.mp4`.
-> 3. Replace `YOUR_VIDEO_URL_HERE` above with your online link (YouTube / Google Drive / Loom).
-> 4. Run `git add videos/betaal-demo.mp4 README.md && git commit -m "docs: add demo video proof" && git push origin main`.
+> **📁 Repository Video Directory**: [`videos/`](https://github.com/annujjguptaa-cpu/Betaal/tree/main/videos)
 
 ---
 
@@ -51,7 +44,7 @@ flowchart LR
     A[User Goal Input] --> B[Capture Screen & DOM]
     B --> C["🔒 On-Device Privacy Pipeline<br/>(CLIP ViT + BlazeFace + BERT-NER + OCR)"]
     C --> D["🎨 Canvas Redactor<br/>(Blackfill PII | Pixelate Faces)"]
-    D -->|Sanitized Image + DOM| E["☁️ Cloud VLM Server<br/>(Gemini / Claude / DOM Engine)"]
+    D -->|Sanitized Image + DOM| E["☁️ Cloud VLM Server<br/>(Gemini / Groq / DOM Engine)"]
     E -->|UI Action: click / type| F["⚡ On-Device Action Execution<br/>(Local valueSource Resolution)"]
     F -->|Next Step| B
 ```
@@ -88,7 +81,7 @@ flowchart TD
 
     subgraph BackendServer ["☁️ Express Backend — Zero Persistence"]
         Q --> R{API Key Available?}
-        R -- Yes --> S[Call Gemini / Claude VLM — Context Grounded with RAG Examples]
+        R -- Yes --> S[Call Gemini / Groq VLM — Context Grounded with RAG Examples]
         R -- No --> T[Local Simulated VLM Fallback]
         S --> U["Return JSON: action, selector, value or valueSource, final, confidence"]
         T --> U
@@ -143,7 +136,7 @@ flowchart LR
     subgraph Server["☁️ Backend Server — Zero Persistence"]
         direction TB
         ContextEngine["Context Builder<br/>RAG-grounded with Vault precedents"]
-        VLM["Claude / Gemini / DOM Scoring<br/>cloud reasoning over sanitized data"]
+        VLM["Groq / Gemini / DOM Scoring<br/>cloud reasoning over sanitized data"]
     end
 
     Client -- "Sanitized Screenshot + Anonymized DOM" --> Server
@@ -200,7 +193,7 @@ flowchart TD
     subgraph Backend ["Express Backend"]
         Server["server.js"]
         ContextBuilder["llm-prompt.js (Rich DOM Context + RAG)"]
-        LLM["llm.js → Claude / Gemini / DOM Scoring Engine"]
+        LLM["llm.js → Groq / Gemini / DOM Scoring Engine"]
     end
 
     LiveView -->|Run Agent| Loop
@@ -335,13 +328,14 @@ Betaal's privacy-preserving architecture—where no raw personal data or biometr
 
 ## 🔑 Environment & Database Setup
 
-### 1. API Keys (Do you need Gemini or Anthropic API keys?)
-- **Optional**: Run the backend with a real **Gemini API Key** (`GEMINI_API_KEY`) or **Anthropic Claude Key** (`ANTHROPIC_API_KEY`) in your `.env` file.
+### 1. API Keys (Do you need Gemini or Groq API keys?)
+- **Optional**: Run the backend with real **Groq API Keys** (`GROQ_API_KEYS`) or **Gemini API Keys** (`GEMINI_API_KEYS`) in your `.env` file.
 - **Simulated VLM Fallback (No Key Required)**: With no API key, Betaal automatically engages a local simulated decision engine — fully testable out of the box, no paid keys required.
 - **Where to input key**: Create a `.env` file in the project root:
   ```env
   PORT=3000
-  GEMINI_API_KEY=your_gemini_api_key_here
+  GROQ_API_KEYS=gsk_key1,gsk_key2
+  GEMINI_API_KEYS=AQ_key1,AQ_key2
   ```
 
 ### 2. Databases (MongoDB, Supabase, etc.)
@@ -414,7 +408,7 @@ To return to Chrome/Edge: `git checkout manifest.json`. See `docs/firefox-build.
 | | **`browser-polyfill.js`** | Unified promise-based cross-browser API wrapper enabling identical code execution on Chrome, Edge, and Firefox | Web Extension Polyfill |
 | **Backend & Cloud AI** | **Node.js & Express.js** | Zero-persistence proxy server routing sanitized payloads, enforcing CORS, and managing rate-limiting (20 req/hr/IP) | Cloud Hosted (Render / Local) |
 | | **Google Gemini VLM** | Primary cloud reasoning model (`gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-1.5-flash`) for multi-step UI decisions | Cloud API Gateway (`backend/llm.js`) |
-| | **Anthropic Claude VLM** | Fallback cloud vision model (`claude-3-5-sonnet-20241022`) for complex structural reasoning | Cloud API Gateway (`backend/llm.js`) |
+| | **Groq VLM / LLM** | Fast cloud reasoning model (`llama-3.3-70b-versatile` / `qwen/qwen3.8-27b`) for multi-step UI decisions | Cloud API Gateway (`backend/llm.js`) |
 | | **DOM Scoring Fallback Engine** | Local structural element scoring algorithm providing zero-API-key offline execution capabilities | Backend / Standalone Node.js |
 
 ---
@@ -563,7 +557,7 @@ For judging demonstrations, refer to our full documentation guides:
 * **ONNX Runtime Web**: [Microsoft ONNX Runtime Web](https://onnxruntime.ai/docs/execution-providers/WebGPU-ExecutionProvider.html) — WebGPU and WASM inference engine for BlazeFace
 * **DPDP Act 2023**: [Digital Personal Data Protection Act 2023](https://www.meity.gov.in/writereaddata/files/Digital%20Personal%20Data%20Protection%20Act%202023.pdf) — Ministry of Electronics and Information Technology (MeitY)
 * **Tesseract.js**: [Tesseract.js WASM Engine](https://tesseract.projectnaptha.com/) — On-device Optical Character Recognition
-* **Google Gemini & Anthropic Claude**: Cloud Vision-Language Model APIs for sanitized context reasoning
+* **Google Gemini & Groq**: Cloud Vision-Language Model APIs for sanitized context reasoning
 
 ---
 
