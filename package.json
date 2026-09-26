@@ -17,6 +17,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "groq-sdk": "^1.6.0",
     "onnxruntime-web": "^1.29.0",
     "tesseract.js": "^7.0.0"
   },

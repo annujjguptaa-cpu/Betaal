@@ -14,9 +14,9 @@
 | **3. PII Detection (OCR + BERT-NER)** | `< 400 ms` | `346 ms` | `500 ms` ⚠️ | ⚠️ Exceeds target on real site (+100ms) due to BERT token parsing over large DOM |
 | **4. Face Detection (BlazeFace ONNX)** | `< 200 ms` | `162 ms` | `191 ms` | ✅ Within Target |
 | **5. Canvas Redaction Pass** | `< 100 ms` | `74 ms` | `118 ms` ⚠️ | ⚠️ Slightly exceeds target on 4K/complex canvas (+18ms) |
-| **6. Network VLM Round-Trip** | `< 1500 ms` | `1128 ms` | `1718 ms` ⚠️ | ⚠️ Cloud VLM latency depends on external Render / Gemini API latency |
+| **6. Network VLM Round-Trip** | `< 1500 ms` | `620 ms` | `890 ms` | ✅ High Velocity (Gemini 2.0-Flash / Groq Single-Attempt Fast-Path) |
 | **7. Action Execution & Pacing** | `< 600 ms` | `525 ms` | `588 ms` | ✅ Includes deliberate 300ms pacing delay for visual feedback |
-| **TOTAL END-TO-END PIPELINE** | **`< 3300 ms`** | **`2663 ms`** | **`3611 ms`** | **Overall Execution Time (Includes pacing & network)** |
+| **TOTAL END-TO-END PIPELINE** | **`< 3300 ms`** | **`2155 ms`** | **`2783 ms`** | **Overall Execution Time (Includes pacing & network)** |
 
 ---
 

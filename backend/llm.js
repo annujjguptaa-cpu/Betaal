@@ -207,10 +207,36 @@ function parseKeyPool(envVarValue) {
     .filter(k => k.length > 0);
 }
 
+const Groq = require('groq-sdk');
+
 /**
- * Calls Vision-Language Model API (Gemini/Claude) with redacted screenshot and prompt.
- * Supports API Key Pooling & Fallover: rotates through all Gemini keys first,
- * then all Anthropic keys, before resorting to local DOM-aware fallback.
+ * Helper to determine if an HTTP status code or error object represents a configuration-level error.
+ * Config-level errors (404 model not found, invalid model ID, bad request shape) mean all keys for that provider will fail identically.
+ * Per-key errors (401/403 auth, 429 rate limit, quota exceeded) mean rotating keys might succeed.
+ * @param {number} status 
+ * @param {string} errMessage 
+ * @returns {boolean}
+ */
+function isConfigError(status, errMessage = '') {
+  const msgLower = (errMessage || '').toLowerCase();
+  // Do NOT treat API key errors as config errors (400 API key not valid / 401 invalid_api_key)
+  if (msgLower.includes('api key') || msgLower.includes('invalid_api_key') || status === 401 || status === 403) {
+    return false;
+  }
+  // Model-not-found, 404, or invalid model name errors are config errors
+  if (status === 404 || msgLower.includes('model') || msgLower.includes('not_found') || msgLower.includes('does not exist')) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Calls Vision-Language Model API (Gemini/Groq) with redacted screenshot and prompt.
+ * Supports API Key Pooling & Fail-Fast rotation:
+ * - Rotates through Gemini keys (using gemini-2.0-flash).
+ * - Rotates through Groq keys (using Groq SDK / vision models).
+ * - If a provider returns a config-level error (e.g. 404 model not found), skips remaining keys for that provider.
+ * - Falls back to local DOM-aware simulated engine if all providers fail.
  *
  * @param {string} redactedImageBase64 
  * @param {string} goal 
@@ -222,92 +248,97 @@ async function callVLM(redactedImageBase64, goal, domStructure = [], retrievedEx
   const promptText = buildPrompt(goal, domStructure, retrievedExamples);
 
   const geminiKeys = parseKeyPool(process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY);
-  const anthropicKeys = parseKeyPool(process.env.ANTHROPIC_API_KEYS || process.env.ANTHROPIC_API_KEY);
+  const groqKeys = parseKeyPool(process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY);
 
-  if (geminiKeys.length === 0 && anthropicKeys.length === 0) {
+  if (geminiKeys.length === 0 && groqKeys.length === 0) {
     console.warn('[VLM] No API keys found — using DOM-aware simulated engine.');
     return getSimulatedDecisionFromDOM(domStructure, goal);
   }
 
   const base64Image = redactedImageBase64.replace(/^data:image\/\w+;base64,/, '');
+  const dataUrl = redactedImageBase64.startsWith('data:') 
+    ? redactedImageBase64 
+    : `data:image/png;base64,${base64Image}`;
 
-  // 1. Try Gemini Key Pool first
-  const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
-
+  // 1. Try Gemini Key Pool
+  const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  
   for (let i = 0; i < geminiKeys.length; i++) {
     const key = geminiKeys[i];
     console.log(`[VLM] Trying Gemini API Key ${i + 1}/${geminiKeys.length}...`);
 
-    for (const modelName of geminiModels) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`;
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: 'image/png', data: base64Image } }] }]
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (rawContent) {
-            console.log(`[VLM] Gemini Key ${i + 1} succeeded with model '${modelName}'.`);
-            return rawContent;
-          }
-        }
-      } catch (geminiErr) {
-        // Continue trying next model/key
-      }
-    }
-    console.warn(`[VLM] Gemini Key ${i + 1} endpoints exhausted. Rotating to next key...`);
-  }
-
-  // 2. Try Anthropic Key Pool if all Gemini keys fail/exhausted
-  for (let j = 0; j < anthropicKeys.length; j++) {
-    const key = anthropicKeys[j];
-    console.log(`[VLM] Trying Anthropic Claude API Key ${j + 1}/${anthropicKeys.length}...`);
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${key}`;
+      const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': key,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-3-5-sonnet-20241022',
-          max_tokens: 1024,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'image', source: { type: 'base64', media_type: 'image/png', data: base64Image } },
-              { type: 'text', text: promptText }
-            ]
-          }]
+          contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: 'image/png', data: base64Image } }] }]
         })
       });
 
       if (response.ok) {
         const data = await response.json();
-        const rawContent = data.content?.[0]?.text;
+        const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (rawContent) {
-          console.log(`[VLM] Anthropic API Key ${j + 1} succeeded.`);
+          console.log(`[VLM] Gemini Key ${i + 1} succeeded with model '${geminiModel}'.`);
           return rawContent;
         }
       } else {
         const errText = await response.text();
-        console.warn(`[VLM] Anthropic Key ${j + 1} failed (${response.status}): ${errText.slice(0, 120)}...`);
+        console.warn(`[VLM] Gemini Key ${i + 1} failed (${response.status}): ${errText.slice(0, 120)}...`);
+
+        if (isConfigError(response.status, errText)) {
+          console.warn(`[VLM] Gemini model misconfigured, skipping remaining Gemini keys`);
+          break; // Skip remaining Gemini keys immediately
+        }
       }
-    } catch (anthropicErr) {
-      console.warn(`[VLM] Anthropic Key ${j + 1} network error: ${anthropicErr.message}. Rotating...`);
+    } catch (geminiErr) {
+      console.warn(`[VLM] Gemini Key ${i + 1} network error: ${geminiErr.message}. Rotating...`);
     }
   }
 
-  // 3. Final Fallback to DOM-aware simulated engine if all keys exhausted
-  console.warn('[VLM] All Gemini and Anthropic API keys exhausted or failed — falling back to local DOM-aware simulated engine.');
+  // 2. Try Groq Key Pool if Gemini failed/exhausted
+  const groqModel = process.env.GROQ_MODEL || 'llama-3.2-11b-vision-preview';
+
+  for (let j = 0; j < groqKeys.length; j++) {
+    const key = groqKeys[j];
+    console.log(`[VLM] Trying Groq API Key ${j + 1}/${groqKeys.length}...`);
+
+    try {
+      const groqClient = new Groq({ apiKey: key });
+      const chatCompletion = await groqClient.chat.completions.create({
+        model: groqModel,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: promptText },
+              { type: 'image_url', image_url: { url: dataUrl } }
+            ]
+          }
+        ]
+      });
+
+      const rawContent = chatCompletion.choices?.[0]?.message?.content;
+      if (rawContent) {
+        console.log(`[VLM] Groq API Key ${j + 1} succeeded with model '${groqModel}'.`);
+        return rawContent;
+      }
+    } catch (groqErr) {
+      const status = groqErr.status || groqErr.statusCode || (groqErr.message?.includes('404') ? 404 : 500);
+      const msg = groqErr.message || '';
+      console.warn(`[VLM] Groq Key ${j + 1} failed (${status}): ${msg.slice(0, 120)}...`);
+
+      if (isConfigError(status, msg)) {
+        console.warn(`[VLM] Groq model ID invalid, skipping remaining Groq keys`);
+        break; // Skip remaining Groq keys immediately
+      }
+    }
+  }
+
+  // 3. Final Fallback to DOM-aware simulated engine if all providers fail
+  console.warn('[VLM] All Gemini and Groq API keys exhausted or failed — falling back to local DOM-aware simulated engine.');
   return getSimulatedDecisionFromDOM(domStructure, goal);
 }
 
