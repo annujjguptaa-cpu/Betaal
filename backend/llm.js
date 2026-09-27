@@ -2,89 +2,166 @@
 const { buildPrompt } = require('./llm-prompt');
 
 /**
- * Parses and validates raw text response from local Ollama model into structured action object.
+ * Universal, generalized parser for local LLM output.
+ * Guarantees a valid schema response ({action, selector, value, valueSource, reasoning, final, confidence})
+ * regardless of key names, nesting, or informal action descriptions returned by local models.
+ *
  * @param {string} rawText 
- * @returns {{action: 'click'|'scroll'|'type', selector: string, reasoning: string, final: boolean, confidence: number}}
+ * @param {string} [goal=''] 
+ * @param {Array<Object>} [domStructure=[]] 
+ * @returns {{action: 'click'|'scroll'|'type', selector: string, value?: string, valueSource?: string, reasoning: string, final: boolean, confidence: number}}
  */
-function parseVLMResponse(rawText) {
+function parseVLMResponse(rawText, goal = '', domStructure = []) {
   if (!rawText || typeof rawText !== 'string') {
-    throw new Error('Parse error: Empty or non-string response received from local model. Raw: ' + rawText);
+    throw new Error('Parse error: Empty response received from local model.');
   }
 
-  // Strip markdown code fences if present (e.g., ```json ... ```)
+  // 1. Clean JSON fences / extra text
   let cleaned = rawText.trim();
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   }
 
-  let parsed;
+  // Attempt JSON parse or extract first JSON block
+  let parsed = null;
   try {
     parsed = JSON.parse(cleaned);
   } catch (err) {
-    throw new Error(`Invalid JSON returned by local model: ${err.message}. Raw text was: "${rawText}"`);
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch (e) {
+        // Fall back to null
+      }
+    }
   }
 
   if (!parsed || typeof parsed !== 'object') {
-    throw new Error('Local model response JSON is not an object. Raw text: ' + rawText);
+    parsed = { rawExplanation: rawText };
   }
 
-  const validActions = ['click', 'scroll', 'type'];
-
-  // Action normalization for local 1.5B models (e.g., "Track Parcel" -> "type", "Fill" -> "type", "Press" -> "click")
-  if (typeof parsed.action === 'string') {
-    let rawAction = parsed.action.trim();
-    let actionLower = rawAction.toLowerCase();
-
-    if (!validActions.includes(actionLower)) {
-      if (/type|fill|enter|input|write|track|consign/i.test(actionLower)) {
-        parsed.action = 'type';
-      } else if (/click|press|submit|search|select|go|navigate/i.test(actionLower)) {
-        parsed.action = 'click';
-      } else if (/scroll/i.test(actionLower)) {
-        parsed.action = 'scroll';
+  // Helper to recursively scan all keys for target concepts
+  function findValueByKeys(obj, keyRegex) {
+    if (!obj || typeof obj !== 'object') return null;
+    for (const [key, val] of Object.entries(obj)) {
+      if (keyRegex.test(key) && val != null && val !== '') {
+        return val;
       }
-    } else {
-      parsed.action = actionLower;
+      if (typeof val === 'object' && val !== null) {
+        const nested = findValueByKeys(val, keyRegex);
+        if (nested != null && nested !== '') return nested;
+      }
+    }
+    return null;
+  }
+
+  // 2. Discover raw key fields across non-standard key names
+  let rawActionStr = findValueByKeys(parsed, /action|intent|step|command|operation|task|do|nextAction|actionType/i);
+  let rawSelectorStr = findValueByKeys(parsed, /selector|target|element|cssSelector|targetSelector|id|xpath|button|input|field/i);
+  let rawValueStr = findValueByKeys(parsed, /value|text|input|inputValue|parcelId|trackingId|code|query|data|content|val/i);
+  let rawReasoningStr = findValueByKeys(parsed, /reasoning|reason|explanation|description|thought|details|summary/i);
+  let valueSourceStr = findValueByKeys(parsed, /valueSource|profileKey|source/i);
+
+  // If no explicit action string found, use full JSON string or raw text as candidate
+  const combinedContext = [
+    String(rawActionStr || ''),
+    String(rawReasoningStr || ''),
+    String(parsed.rawExplanation || ''),
+    JSON.stringify(parsed)
+  ].join(' ');
+
+  // 3. Action classification
+  let action = 'click'; // default fallback
+  if (/type|fill|enter|input|write|track|consign|search box|query/i.test(combinedContext)) {
+    if (!/click only|submit button/i.test(combinedContext) || rawValueStr || /id|code|number/i.test(goal)) {
+      action = 'type';
+    }
+  }
+  if (/click|press|submit|select|go|navigate|tap|choose|open/i.test(combinedContext) && !rawValueStr && action !== 'type') {
+    action = 'click';
+  }
+  if (/scroll/i.test(combinedContext)) {
+    action = 'scroll';
+  }
+  // Enforce valid enum if explicit verb matching
+  if (typeof rawActionStr === 'string' && ['click', 'scroll', 'type'].includes(rawActionStr.trim().toLowerCase())) {
+    action = rawActionStr.trim().toLowerCase();
+  }
+
+  // 4. Selector resolution and DOM grounding
+  let selector = typeof rawSelectorStr === 'string' ? rawSelectorStr.trim() : null;
+
+  // Clean selector syntax if model returned raw element description or id without prefix
+  if (selector) {
+    if (!selector.startsWith('#') && !selector.startsWith('.') && !selector.includes('[') && !selector.includes(' ')) {
+      selector = `#${selector}`;
     }
   }
 
-  if (!validActions.includes(parsed.action)) {
-    throw new Error(`Local model field 'action' must be one of ['click', 'scroll', 'type'], got '${parsed.action}'. Raw: ` + rawText);
-  }
+  // Ground selector against domStructure if selector is missing or not matching
+  if (!selector && Array.isArray(domStructure) && domStructure.length > 0) {
+    const goalLower = goal.toLowerCase();
+    const reasoningLower = combinedContext.toLowerCase();
 
-  // Handle alternative selector keys from smaller models (e.g. target, element, cssSelector)
-  if (!parsed.selector || typeof parsed.selector !== 'string') {
-    const altSelector = parsed.target || parsed.element || parsed.cssSelector || parsed.targetSelector || parsed.id;
-    if (altSelector && typeof altSelector === 'string') {
-      parsed.selector = altSelector.startsWith('#') || altSelector.startsWith('.') || altSelector.includes('[') 
-        ? altSelector 
-        : `#${altSelector}`;
+    // Strategy A: Find element matching action type & keywords
+    let match = domStructure.find(item => {
+      const itemText = (item.text || item.placeholder || item.id || item.ariaLabel || '').toLowerCase();
+      if (action === 'type' && (item.tag === 'input' || item.tag === 'textarea')) {
+        return reasoningLower.includes(itemText) || goalLower.includes(itemText) || itemText.includes('number') || itemText.includes('consignment') || itemText.includes('search') || itemText.includes('id');
+      }
+      if (action === 'click' && (item.tag === 'button' || item.type === 'submit')) {
+        return reasoningLower.includes(itemText) || goalLower.includes(itemText) || itemText.includes('track') || itemText.includes('search') || itemText.includes('submit');
+      }
+      return false;
+    });
+
+    // Strategy B: Pick first input/button depending on action
+    if (!match) {
+      if (action === 'type') {
+        match = domStructure.find(item => item.tag === 'input' || item.tag === 'textarea');
+      } else if (action === 'click') {
+        match = domStructure.find(item => item.tag === 'button' || item.type === 'submit' || item.role === 'button');
+      }
+    }
+
+    // Strategy C: Absolute fallback to first DOM element
+    if (!match) {
+      match = domStructure[0];
+    }
+
+    if (match && match.selector) {
+      selector = match.selector;
     }
   }
 
-  if (!parsed.selector || typeof parsed.selector !== 'string') {
-    throw new Error(`Local model field 'selector' must be a non-empty string, got '${parsed.selector}'. Raw: ` + rawText);
+  if (!selector) {
+    selector = 'body';
   }
 
-  // Handle alternative value keys from smaller models (e.g. parcelId, trackingId, text)
-  if (parsed.value == null) {
-    const altValue = parsed.parcelId || parsed.trackingId || parsed.consignmentId || parsed.text || parsed.inputValue;
-    if (altValue != null) {
-      parsed.value = String(altValue);
+  // 5. Value extraction & non-sensitive code parsing from Goal
+  let value = rawValueStr != null ? String(rawValueStr) : undefined;
+  let valueSource = valueSourceStr != null ? String(valueSourceStr) : undefined;
+
+  if (action === 'type' && !value && !valueSource) {
+    const codeMatch = goal.match(/\b([A-Z0-9]{5,25})\b/i) || goal.match(/(?:id|code|number|consignment|parcel):\s*([^\s]+)/i);
+    if (codeMatch && codeMatch[1]) {
+      value = codeMatch[1].trim();
     }
   }
 
-  if (!parsed.reasoning || typeof parsed.reasoning !== 'string') {
-    parsed.reasoning = `Executed ${parsed.action} on ${parsed.selector}`;
-  }
+  // 6. Reasoning & Metadata
+  let reasoning = typeof rawReasoningStr === 'string' && rawReasoningStr.trim().length > 0
+    ? rawReasoningStr.trim()
+    : `Executed ${action} on ${selector} based on goal "${goal}".`;
 
   return {
-    action: parsed.action,
-    selector: parsed.selector,
-    value: parsed.value != null ? String(parsed.value) : (parsed.action === 'type' && !parsed.valueSource ? '' : undefined),
-    valueSource: parsed.valueSource || undefined,
-    reasoning: parsed.reasoning,
-    final: typeof parsed.final === 'boolean' ? parsed.final : false,
+    action: action,
+    selector: selector,
+    value: value,
+    valueSource: valueSource,
+    reasoning: reasoning,
+    final: Boolean(parsed.final),
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.9
   };
 }

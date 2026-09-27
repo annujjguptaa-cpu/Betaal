@@ -126,7 +126,7 @@ app.post('/act', async (req, res) => {
     const rawVLMResponse = await callVLM(goal, domStructure, retrievedExamples);
 
     console.log(`[${new Date().toISOString()}] [3/4] Local model response received and validated`);
-    const parsedAction = parseVLMResponse(rawVLMResponse);
+    const parsedAction = parseVLMResponse(rawVLMResponse, goal, domStructure);
 
     console.log(`[${new Date().toISOString()}] [4/4] Returning action to client:`, JSON.stringify(parsedAction));
     return res.json(parsedAction);
