@@ -19,22 +19,23 @@
  */
 function routeTask(goal, dom, context = {}) {
   if (!goal || !Array.isArray(dom)) return null;
+  const ctx = context || {};
   const g = goal.toLowerCase();
 
   if (/irctc|train|ndls|bct|mmct|rajdhani|shatabdi|search.*train|train.*between|trains.*from/.test(g)) {
-    return handleIRCTC(goal, dom);
+    return handleIRCTC(goal, dom, ctx);
   }
   if (/india post|consignment|parcel|tracking|track.*delivery|delivery.*status/.test(g)) {
-    return handleIndiaPost(goal, dom, context);
+    return handleIndiaPost(goal, dom, ctx);
   }
   if (/driving licen|parivahan|sarathi|dl renewal|dl services|driving license/.test(g)) {
-    return handleParivahan(goal, dom);
+    return handleParivahan(goal, dom, ctx);
   }
   if (/voter|electoral|epic|eci|nvsp|voter.*roll|voter.*card/.test(g)) {
-    return handleECI(goal, dom);
+    return handleECI(goal, dom, ctx);
   }
   if (/aadhaar|uidai|enrolment|enrollment|aadhar status/.test(g)) {
-    return handleUIDAI(goal, dom, context);
+    return handleUIDAI(goal, dom, ctx);
   }
 
   return null;
@@ -211,7 +212,7 @@ function handleIRCTC(goal, dom) {
 // Sequence: type consignment ID → captcha (pause for user) → click Search/Evaluate
 // Context: captchaSolved=true skips the pause and goes straight to clicking submit
 // ─────────────────────────────────────────────────────────────────────────────
-function handleIndiaPost(goal, dom, context) {
+function handleIndiaPost(goal, dom, context = {}) {
   const codeMatch =
     goal.match(/\b([A-Z]{2}\d{9}[A-Z]{2})\b/i) ||
     goal.match(/consignment\s*id[:\s]+([A-Za-z0-9]+)/i) ||
@@ -343,7 +344,7 @@ function handleParivahan(goal, dom) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TASK 4: ECI Electoral Roll Search
 // ─────────────────────────────────────────────────────────────────────────────
-function handleECI(goal, dom, context) {
+function handleECI(goal, dom, context = {}) {
   // If on main landing page voters.eci.gov.in, click "Search in Electoral Roll" link/card
   const searchRollLink = findEl(dom, [/search\s+in\s+electoral\s+roll/i, /electoral\s+search/i], ['a', 'button', 'div']);
   if (searchRollLink && !dom.some(d => (d.id || d.name || d.placeholder || '').toLowerCase().includes('epic'))) {
@@ -418,7 +419,7 @@ function handleECI(goal, dom, context) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TASK 5: UIDAI Aadhaar Enrolment Status
 // ─────────────────────────────────────────────────────────────────────────────
-function handleUIDAI(goal, dom, context) {
+function handleUIDAI(goal, dom, context = {}) {
   const enrolMatch =
     goal.match(/\b(\d{14})\b/) ||
     goal.match(/enrolment\s*id[:\s]+([\d\s\/]+)/i);
