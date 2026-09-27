@@ -82,7 +82,7 @@ function getDOMStructure() {
   const scrollX  = window.scrollX  || 0;
   const focusedEl = document.activeElement;
 
-  return prioritized.map((el, elIdx) => {
+  const domElements = prioritized.map((el, elIdx) => {
     const rect        = el.getBoundingClientRect();
     const tag         = el.tagName.toLowerCase();
     const type        = (el.type  || '').toLowerCase();
