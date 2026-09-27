@@ -57,7 +57,8 @@ function buildPrompt(goal, domStructure = [], retrievedExamples = []) {
   // Profile keys for valueSource on sensitive fields
   const profileKeys = [
     'fullName', 'email', 'phone', 'aadhaar', 'pan',
-    'passport', 'address', 'pinCode', 'dateOfBirth', 'bankAccount'
+    'passport', 'address', 'pinCode', 'dateOfBirth', 'bankAccount',
+    'epic', 'drivingLicense', 'enrolmentId'
   ].join(' | ');
 
   // RAG precedent section

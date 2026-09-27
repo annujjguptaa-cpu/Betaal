@@ -23,6 +23,9 @@ const PROFILE_FIELD_KEYS = [
   'pinCode',
   'dateOfBirth',
   'bankAccount',
+  'epic',
+  'drivingLicense',
+  'enrolmentId',
 ];
 
 /**

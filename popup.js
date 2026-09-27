@@ -978,6 +978,9 @@ const PROFILE_FIELD_MAP = {
   pinCode:     'pf-pinCode',
   dateOfBirth: 'pf-dateOfBirth',
   bankAccount: 'pf-bankAccount',
+  epic:        'pf-epic',
+  drivingLicense: 'pf-drivingLicense',
+  enrolmentId: 'pf-enrolmentId'
 };
 
 async function renderProfileTab() {
