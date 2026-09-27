@@ -53,9 +53,16 @@ async function loadFaceModel(modelPath = 'extension/models/face_detector_balance
       try {
         ortInstance = await import('onnxruntime-web');
       } catch (e) {
-        throw new Error('onnxruntime-web is not available: ' + e.message);
+        console.warn('[loadFaceModel] ONNX import failed — will use DOM face redaction fallback:', e.message);
+        ortInstance = null;
       }
     }
+  }
+
+  // Disable multi-threading workers to prevent Extension V3 worker crashes (SharedArrayBuffer restriction)
+  if (ortInstance && ortInstance.env && ortInstance.env.wasm) {
+    ortInstance.env.wasm.numThreads = 1;
+    ortInstance.env.wasm.proxy = false;
   }
 
   let session = null;

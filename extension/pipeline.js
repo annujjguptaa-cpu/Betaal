@@ -172,7 +172,9 @@ async function processScreenshot(imageDataUrl, domStructure = [], currentSiteUrl
   const faceStart = performance.now();
   let rawFaceRegions = [];
   try {
-    rawFaceRegions = await detectFacesFn(processingImage, 1, faceModelPath);
+    const facePromise = detectFacesFn ? detectFacesFn(processingImage, 1, faceModelPath) : Promise.resolve([]);
+    const timeoutPromise = new Promise(res => setTimeout(() => res([]), 1500));
+    rawFaceRegions = await Promise.race([facePromise, timeoutPromise]);
   } catch (faceErr) {
     console.warn('[Pipeline Degradation] Face detection failed:', faceErr.message);
     rawFaceRegions = [];
