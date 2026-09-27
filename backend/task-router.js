@@ -516,6 +516,30 @@ function handleDigiLocker(goal, dom, context = {}) {
   else if (/vehicle|rc\b|registration/i.test(g)) targetKeyword = 'registration';
   else if (/pan\b/i.test(g)) targetKeyword = 'pan';
 
+  // Spatial match: find row buttons next to document title header (e.g. "Aadhaar Card", "PAN Verification Record", "Class X Marksheet")
+  const targetHeader = dom.find(item => {
+    if (!item.rect || item.rect.width === 0) return false;
+    const txt = (item.text || item.ariaLabel || item.id || '').toLowerCase();
+    return new RegExp(targetKeyword, 'i').test(txt);
+  });
+
+  if (targetHeader && targetHeader.rect) {
+    const rowButtons = dom.filter(item => {
+      if (!item.rect || item.rect.width === 0) return false;
+      if (!['button', 'a', 'span', 'i'].includes(item.tag)) return false;
+      if (item.selector && (item.selector.includes('uwaw') || item.selector.includes('Accessibility') || item.selector.includes('checkbox') || item.selector.includes('speak') || item.selector.includes('reset'))) return false;
+      // Must be on roughly same horizontal row (top difference < 40px) and to the right of header
+      return Math.abs(item.rect.top - targetHeader.rect.top) < 40 && item.rect.left > targetHeader.rect.left;
+    }).sort((a, b) => a.rect.left - b.rect.left);
+
+    if (rowButtons.length > 0) {
+      // The rightmost button on the row is the Download PDF button
+      const downloadBtn = rowButtons[rowButtons.length - 1];
+      return mk('click', downloadBtn.selector, null, null,
+        `Clicking Download PDF button for ${targetKeyword.toUpperCase()} on DigiLocker issued documents list.`, true, 0.99);
+    }
+  }
+
   // Search for direct PDF download button or link for the target document
   const downloadPdfBtn = dom.find(item => {
     const hay = [item.id, item.name, item.placeholder, item.ariaLabel, item.text, item.className, item.href, item.title]
