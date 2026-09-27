@@ -564,6 +564,40 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         })
       });
 
+      // Handle CAPTCHA_REQUIRED (422) — pause loop and ask user to solve it
+      if (backendResponse.status === 422) {
+        let captchaData = {};
+        try { captchaData = await backendResponse.json(); } catch (e) {}
+        const captchaReason = captchaData.message || 'CAPTCHA detected on page — please solve it manually.';
+        addLoopLog(`⚠️ CAPTCHA Detected: ${captchaReason}`);
+        updateLoopStatus('paused', 'CAPTCHA Required');
+
+        const interventionId = 'captcha_' + Date.now();
+        const pausedFeedItem = {
+          id: 'step_' + agentLoopState.iterationCount + '_captcha',
+          stepIndex: agentLoopState.iterationCount,
+          maxIterations: agentLoopState.maxIterations,
+          status: 'paused',
+          title: `🔐 CAPTCHA Required — solve it in the browser`,
+          subtitle: captchaReason,
+          reasoning: 'Agent cannot solve visual CAPTCHAs. Solve it in the page, then click Approve & Continue.',
+          interventionId,
+          timestamp: new Date().toISOString()
+        };
+        addFeedItem(pausedFeedItem);
+        showInterventionNotification(captchaReason);
+        agentLoopState.pendingInterventions.unshift({
+          id: interventionId,
+          reason: captchaReason,
+          siteUrl: agentLoopState.activeTabUrl,
+          action: null,
+          status: 'pending'
+        });
+        agentLoopState.isLocked = false;
+        broadcastLoopState();
+        return;
+      }
+
       if (!backendResponse.ok) {
         let errDetails = `Server HTTP ${backendResponse.status}`;
         try {

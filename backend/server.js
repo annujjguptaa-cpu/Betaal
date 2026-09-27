@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { callVLM, parseVLMResponse } = require('./llm');
+const { routeTask } = require('./task-router');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -122,6 +123,26 @@ app.post('/act', async (req, res) => {
   console.log(`[${timestamp}] [1/4] Text-only payload received, zero PII transmitted`);
 
   try {
+    // ── STEP 1: Try the deterministic task router first ──
+    // For known portal patterns (IRCTC, India Post, Parivahan, ECI, UIDAI),
+    // skip the LLM entirely and return the correct action based on DOM state.
+    const routedAction = routeTask(goal, domStructure || []);
+    if (routedAction) {
+      // Handle captcha pause signal
+      if (routedAction.value === '__CAPTCHA_REQUIRED__') {
+        console.log(`[${new Date().toISOString()}] [3/4] CAPTCHA detected — returning pause signal`);
+        return res.status(422).json({
+          error: 'CAPTCHA_REQUIRED',
+          message: 'A CAPTCHA was detected on the page. Please solve it manually in the browser and click Approve to continue.',
+          selector: routedAction.selector
+        });
+      }
+      console.log(`[${new Date().toISOString()}] [3/4] Task router matched — skipping LLM`);
+      console.log(`[${new Date().toISOString()}] [4/4] Returning deterministic action:`, JSON.stringify(routedAction));
+      return res.json(routedAction);
+    }
+
+    // ── STEP 2: Fall back to local Ollama model for unrecognised goals ──
     console.log(`[${new Date().toISOString()}] [2/4] Sending sanitized DOM context to local Ollama model`);
     const rawVLMResponse = await callVLM(goal, domStructure, retrievedExamples);
 

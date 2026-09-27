@@ -65,13 +65,20 @@ async function sendToBackend(redactedImage, goal, domStructure = [], customRetri
     });
 
     if (!response.ok) {
-      let errorMsg = `Server error HTTP ${response.status}`;
-      try {
-        const errJson = await response.json();
-        if (errJson.error) errorMsg = errJson.error;
-      } catch (e) {
-        // Fallback to generic message
+      let errJson = null;
+      try { errJson = await response.json(); } catch (e) {}
+
+      // 422 = CAPTCHA detected — signal caller to pause for user input
+      if (response.status === 422 && errJson && errJson.error === 'CAPTCHA_REQUIRED') {
+        const captchaError = new Error('CAPTCHA_REQUIRED');
+        captchaError.isCaptcha = true;
+        captchaError.captchaSelector = errJson.selector || null;
+        captchaError.captchaMessage = errJson.message || 'Solve the CAPTCHA manually then click Approve.';
+        throw captchaError;
       }
+
+      let errorMsg = `Server error HTTP ${response.status}`;
+      if (errJson && errJson.error) errorMsg = errJson.error;
       throw new Error(errorMsg);
     }
 
