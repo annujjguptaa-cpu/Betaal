@@ -37,6 +37,9 @@ function routeTask(goal, dom, context = {}) {
   if (/aadhaar|uidai|enrolment|enrollment|aadhar status/.test(g)) {
     return handleUIDAI(goal, dom, ctx);
   }
+  if (/digilocker|locker|issued document|fetch.*document|download.*pdf|download.*aadhaar|download.*license|download.*marksheet/.test(g)) {
+    return handleDigiLocker(goal, dom, ctx);
+  }
 
   return null;
 }
@@ -464,6 +467,76 @@ function handleUIDAI(goal, dom, context = {}) {
   if (submitBtn) {
     return mk('click', submitBtn.selector, null, null,
       `Enrolment ID entered. Clicking Submit.`, true, 0.99);
+  }
+
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TASK 6: DigiLocker — Download Issued Documents / Fetch Documents
+// ─────────────────────────────────────────────────────────────────────────────
+function handleDigiLocker(goal, dom, context = {}) {
+  const g = goal.toLowerCase();
+
+  // 1. Detect DigiLocker OTP / PIN authentication prompt
+  const otpInput = findInputEl(dom, [/otp/i, /pin/i, /security\s*code/i, /one\s*time\s*password/i]);
+  if (otpInput && !isFilled(otpInput)) {
+    return mk('type', otpInput.selector, '__CAPTCHA_REQUIRED__', null,
+      `DigiLocker OTP / PIN input detected — user must enter the OTP/PIN manually in the browser.`, false, 0.99);
+  }
+
+  // 2. If user solved OTP / PIN intervention, click Verify / Submit OTP button
+  if (context.captchaSolved) {
+    const verifyBtn = findEl(dom, [/verify|submit|continue|sign\s*in|login/i], ['button', 'input', 'a']);
+    if (verifyBtn) {
+      return mk('click', verifyBtn.selector, null, null,
+        `OTP entered by user. Clicking Verify / Submit to log into DigiLocker.`, false, 0.99);
+    }
+  }
+
+  // 3. Navigate to "Issued Documents" tab if not on it
+  const issuedTab = findEl(dom, [/issued\s*documents/i, /issued\s*doc/i, /my\s*documents/i], ['a', 'button', 'li', 'span', 'div']);
+  const isOnIssuedTab = dom.some(item => {
+    const text = (item.text || item.ariaLabel || item.className || '').toLowerCase();
+    return /issued.*document/i.test(text) && (item.className || '').includes('active');
+  });
+
+  if (issuedTab && !isOnIssuedTab) {
+    return mk('click', issuedTab.selector, null, null,
+      `Navigating to "Issued Documents" tab in DigiLocker.`, false, 0.98);
+  }
+
+  // 4. Target specific document requested in goal (Aadhaar, Driving License, Marksheet, etc.)
+  let targetKeyword = 'aadhaar';
+  if (/license|dl\b/i.test(g)) targetKeyword = 'license';
+  else if (/marksheet|class\s*10|class\s*12|cbse/i.test(g)) targetKeyword = 'marksheet';
+  else if (/vehicle|rc\b|registration/i.test(g)) targetKeyword = 'registration';
+  else if (/pan\b/i.test(g)) targetKeyword = 'pan';
+
+  // Search for the download PDF button associated with the requested document
+  const downloadPdfBtn = dom.find(item => {
+    if (!['button', 'a', 'i', 'span', 'svg'].includes(item.tag)) return false;
+    const hay = [item.id, item.name, item.placeholder, item.ariaLabel, item.text, item.className, item.href]
+      .map(s => (s || '').toLowerCase()).join(' ');
+
+    // Must be a PDF download action or download icon
+    const isDownload = /pdf|download|save|export|btn-pdf|icon-pdf/i.test(hay);
+    if (!isDownload) return false;
+
+    // Matches target document type or general document card
+    return new RegExp(targetKeyword, 'i').test(hay) || /issued|document|card|file/i.test(hay);
+  });
+
+  if (downloadPdfBtn) {
+    return mk('click', downloadPdfBtn.selector, null, null,
+      `Clicking Download PDF button for ${targetKeyword.toUpperCase()} in DigiLocker.`, true, 0.99);
+  }
+
+  // Fallback: Click the first available PDF / Download link on the Issued Documents page
+  const fallbackDownload = findEl(dom, [/pdf/i, /download/i, /get\s*pdf/i], ['button', 'a', 'span']);
+  if (fallbackDownload) {
+    return mk('click', fallbackDownload.selector, null, null,
+      `Clicking PDF Download button on Issued Documents page.`, true, 0.95);
   }
 
   return null;
