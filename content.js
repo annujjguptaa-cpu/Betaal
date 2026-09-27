@@ -48,12 +48,20 @@ function getDOMStructure() {
         const tag = node.tagName ? node.tagName.toLowerCase() : '';
         const role = node.getAttribute ? (node.getAttribute('role') || '') : '';
 
-        // Standard interactive elements
+        // Standard interactive elements and static PII text nodes
         if (['input', 'textarea', 'select', 'button', 'a', 'label'].includes(tag)) {
           collected.push(node);
         } else if (['button', 'textbox', 'combobox', 'listbox', 'checkbox', 'radio',
                     'link', 'menuitem', 'option', 'tab', 'switch', 'searchbox'].includes(role)) {
           if (!collected.includes(node)) collected.push(node);
+        } else if (['span', 'div', 'p', 'td', 'th', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'b', 'strong'].includes(tag)) {
+          // Collect leaf text nodes (no child element nodes) with visible text
+          if (node.childElementCount === 0) {
+            const txt = (node.textContent || '').trim();
+            if (txt.length >= 2 && txt.length <= 300) {
+              if (!collected.includes(node)) collected.push(node);
+            }
+          }
         }
 
         // Traverse open shadow DOM
@@ -73,10 +81,10 @@ function getDOMStructure() {
     console.warn(`[Betaal DOM] Skipped ${skippedIframeCounts} cross-origin elements.`);
   }
 
-  // Visible first, then hidden; cap at 100 elements
+  // Visible first, then hidden; cap at 200 elements
   const visibleList = rawElements.filter(isVisible);
   const hiddenList  = rawElements.filter(el => !isVisible(el));
-  const prioritized = [...visibleList, ...hiddenList].slice(0, 100);
+  const prioritized = [...visibleList, ...hiddenList].slice(0, 200);
 
   const scrollY  = window.scrollY  || 0;
   const scrollX  = window.scrollX  || 0;
@@ -111,12 +119,10 @@ function getDOMStructure() {
       liveValue = sel ? (sel.text || sel.value || '') : '';
     }
 
-    // ── Visible label text ──
-    let text = '';
-    if (['button', 'a', 'label'].includes(tag)) {
-      text = (el.innerText || el.textContent || '').trim().slice(0, 120);
-    } else if (['submit', 'button', 'reset'].includes(type)) {
-      text = el.value || (el.innerText || el.textContent || '').trim().slice(0, 120);
+    // ── Visible text content ──
+    let text = (el.innerText || el.textContent || '').trim().slice(0, 300);
+    if (['submit', 'button', 'reset'].includes(type) && el.value) {
+      text = el.value.trim().slice(0, 300);
     }
 
     // ── For <select>: collect all option labels to help VLM understand choices ──
@@ -189,8 +195,6 @@ function getDOMStructure() {
     'img, svg, div[class*="avatar"], div[class*="profile"], div[class*="user"], a[class*="profile"], a[class*="user"], [aria-label*="profile" i], [aria-label*="account" i], [aria-label*="user" i]'
   );
   const avatarRects = [];
-  const scrollX = window.scrollX || window.pageXOffset || 0;
-  const scrollY = window.scrollY || window.pageYOffset || 0;
   const screenW = window.innerWidth || 1200;
 
   avatarElements.forEach(el => {

@@ -76,18 +76,27 @@ async function getClipPipeline() {
 
   _clipPipelineLoading = (async () => {
     try {
-      // Works in both ESM (import()) and CommonJS contexts.
-      const { pipeline } = await import('@xenova/transformers');
-      const pipe = await pipeline(
-        'zero-shot-image-classification',
-        'Xenova/clip-vit-base-patch32'
-      );
-      _clipPipeline = pipe;
-      console.log('[ViT Classifier] CLIP pipeline loaded (Xenova/clip-vit-base-patch32).');
-      return pipe;
+      let pipelineFn = null;
+      if (typeof globalThis !== 'undefined' && globalThis.transformers && globalThis.transformers.pipeline) {
+        pipelineFn = globalThis.transformers.pipeline;
+      } else {
+        try {
+          const mod = await import('@xenova/transformers');
+          pipelineFn = mod.pipeline;
+        } catch (e) {
+          // Expected in non-bundled browser environment — fallback to fast heuristic
+          return null;
+        }
+      }
+
+      if (pipelineFn) {
+        const pipe = await pipelineFn('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
+        _clipPipeline = pipe;
+        return pipe;
+      }
+      return null;
     } catch (err) {
-      console.warn('[ViT Classifier] Failed to load CLIP pipeline:', err.message || err);
-      _clipPipelineLoading = null; // Allow retry on next call
+      _clipPipelineLoading = null;
       return null;
     }
   })();
