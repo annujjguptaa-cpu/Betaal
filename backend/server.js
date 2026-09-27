@@ -125,10 +125,10 @@ app.post('/act', async (req, res) => {
     console.log(`[${new Date().toISOString()}] [2/4] Sending sanitized DOM context to local Ollama model`);
     const rawVLMResponse = await callVLM(goal, domStructure, retrievedExamples);
 
-    console.log(`[${new Date().toISOString()}] [3/4] VLM response received and validated`);
+    console.log(`[${new Date().toISOString()}] [3/4] Local model response received and validated`);
     const parsedAction = parseVLMResponse(rawVLMResponse);
 
-    console.log(`[${new Date().toISOString()}] [4/4] Returning action to client`);
+    console.log(`[${new Date().toISOString()}] [4/4] Returning action to client:`, JSON.stringify(parsedAction));
     return res.json(parsedAction);
 
   } catch (error) {
