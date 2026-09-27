@@ -523,6 +523,7 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
       try {
         const domRes = await browser.tabs.sendMessage(activeTab.id, { type: 'GET_DOM_STRUCTURE' });
         domStructure = (domRes && domRes.success) ? domRes.domStructure : [];
+        if (domRes && domRes.avatarRects) domStructure.avatarRects = domRes.avatarRects;
       } catch (domErr) {
         addLoopLog('⚠️ Content script not ready on page. Attempting auto-injection...');
         await browser.scripting.executeScript({
@@ -538,6 +539,7 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         });
         const retryDom = await browser.tabs.sendMessage(activeTab.id, { type: 'GET_DOM_STRUCTURE' });
         domStructure = (retryDom && retryDom.success) ? retryDom.domStructure : [];
+        if (retryDom && retryDom.avatarRects) domStructure.avatarRects = retryDom.avatarRects;
       }
 
       // Module 75: If DOM is sparse (< 2 interactive elements on SPA loading skeleton), wait 1000ms & re-fetch

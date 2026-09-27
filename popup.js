@@ -275,6 +275,7 @@ async function triggerAgentLoop(resumeAction = null) {
       try {
         const dRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
         domStructure = (dRes && dRes.success) ? dRes.domStructure : [];
+        if (dRes && dRes.avatarRects) domStructure.avatarRects = dRes.avatarRects;
       } catch (e) {}
 
       const pipelineRes = await processScreenshot(cap.dataUrl, domStructure, currentTabUrl);
@@ -671,6 +672,7 @@ async function runModeComparison() {
     try {
       const domRes = await browser.tabs.sendMessage(tabs[0].id, { type: 'GET_DOM_STRUCTURE' });
       domStructure = (domRes && domRes.success) ? domRes.domStructure : [];
+      if (domRes && domRes.avatarRects) domStructure.avatarRects = domRes.avatarRects;
     } catch (e) {}
 
     const originalMode = selectedPerformanceMode;

@@ -303,10 +303,11 @@ if (browserApi && browserApi.runtime && browserApi.runtime.onMessage) {
 
       if (message.type === 'GET_DOM_STRUCTURE') {
         const domStructure = getDOMStructure();
+        const avatarRects = domStructure.avatarRects || [];
         if (typeof renderSomOverlay === 'function') {
           renderSomOverlay(domStructure, null, 2500);
         }
-        return { success: true, domStructure };
+        return { success: true, domStructure, avatarRects };
       }
 
       if (message.type === 'RENDER_SOM_OVERLAY') {
