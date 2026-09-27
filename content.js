@@ -270,7 +270,7 @@ function waitForDomStable(timeoutMs = 2000, quietMs = 300) {
 }
 
 // ── Message listener: background service worker <-> content script ──
-const browserApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null);
+var browserApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null);
 if (browserApi && browserApi.runtime && browserApi.runtime.onMessage) {
   browserApi.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
     try {

@@ -204,9 +204,20 @@ async function verifyContentScriptLiveness(tabId, timeoutMs = 3000) {
   });
 
   const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(false), timeoutMs));
-  const isAlive = await Promise.race([pingPromise, timeoutPromise]);
+  let isAlive = await Promise.race([pingPromise, timeoutPromise]);
 
   if (!isAlive) {
+    // If tab is currently loading a new page, wait up to 2.5s for navigation & retry PING
+    try {
+      const tabInfo = await browser.tabs.get(tabId);
+      if (tabInfo && tabInfo.status === 'loading') {
+        console.log(`[Background] Tab ${tabId} is currently loading. Waiting for navigation...`);
+        await new Promise(r => setTimeout(r, 2000));
+        const retryPing = await browser.tabs.sendMessage(tabId, { type: 'PING' }).catch(() => null);
+        if (retryPing && retryPing.pong) return true;
+      }
+    } catch (e) {}
+
     // Attempt auto-injection fallback once
     try {
       console.log('[Background] Content script unpinned/unresponsive, attempting re-injection...');

@@ -9,10 +9,10 @@
  *   address | pinCode | dateOfBirth | bankAccount
  */
 
-const LOCAL_PROFILE_KEY = 'localProfile';
+var LOCAL_PROFILE_KEY = 'localProfile';
 
 /** Keys that map to real sensitive identity fields. */
-const PROFILE_FIELD_KEYS = [
+var PROFILE_FIELD_KEYS = [
   'fullName',
   'email',
   'phone',
