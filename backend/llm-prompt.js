@@ -78,7 +78,7 @@ ${formattedExamples}
 
   return `You are an autonomous web browser form-filling agent. You receive the live DOM structure of a page and a user goal, and decide the SINGLE next UI action to take.
 
-=== WORKED EXAMPLE ===
+=== WORKED EXAMPLE 1 (SENSITIVE FORM FILL) ===
 Input Goal: "Apply for citizen grievance reporting billing issue"
 Input DOM:
 1. <input[text]> { id="applicant-name", placeholder="Full Name" } [SENSITIVE] → selector="#applicant-name"
@@ -96,7 +96,25 @@ Output JSON:
   "confidence": 0.95
 }
 
-=== VALUE SOURCING RULES ===
+=== WORKED EXAMPLE 2 (NON-SENSITIVE TRACKING CODE / CODES) ===
+Input Goal: "Track delivery status with consignment Id: EY567991513IN"
+Input DOM:
+1. <input[text]> { id="consignmentNo", placeholder="Enter Consignment Number" } → selector="#consignmentNo"
+2. <button[submit]> { text="Track Now" } → selector="#track-btn"
+
+Output JSON:
+{
+  "action": "type",
+  "selector": "#consignmentNo",
+  "value": "EY567991513IN",
+  "valueSource": null,
+  "reasoning": "Type consignment tracking ID into consignment number input field.",
+  "final": false,
+  "confidence": 0.95
+}
+
+=== ACTION & VALUE SOURCING RULES ===
+- CRITICAL RULE: "action" MUST BE STRICTLY ONE OF: "type", "click", or "scroll". Never invent custom action names like "Track Parcel" or "Search".
 - For "type" on a [SENSITIVE] field (name, email, phone, aadhaar, address, dob): return "value": null and "valueSource": "<key>" from [${profileKeys}].
 - For "type" on a NON-sensitive field (search box, quantity, message, consignment ID): return "value": "<text>" containing the literal text to type.
 - Tracking numbers, consignment IDs, reference codes, order IDs are ALWAYS non-sensitive — extract the code from the user goal into "value".

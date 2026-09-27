@@ -24,21 +24,56 @@ function parseVLMResponse(rawText) {
     throw new Error(`Invalid JSON returned by local model: ${err.message}. Raw text was: "${rawText}"`);
   }
 
-  const validActions = ['click', 'scroll', 'type'];
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('Local model response JSON is not an object. Raw text: ' + rawText);
+  }
+
+  // Action normalization for local 1.5B models (e.g., "Track Parcel" -> "type", "Fill" -> "type", "Press" -> "click")
+  if (typeof parsed.action === 'string') {
+    let rawAction = parsed.action.trim();
+    let actionLower = rawAction.toLowerCase();
+
+    if (!validActions.includes(actionLower)) {
+      if (/type|fill|enter|input|write|track|consign/i.test(actionLower)) {
+        parsed.action = 'type';
+      } else if (/click|press|submit|search|select|go|navigate/i.test(actionLower)) {
+        parsed.action = 'click';
+      } else if (/scroll/i.test(actionLower)) {
+        parsed.action = 'scroll';
+      }
+    } else {
+      parsed.action = actionLower;
+    }
   }
 
   if (!validActions.includes(parsed.action)) {
     throw new Error(`Local model field 'action' must be one of ['click', 'scroll', 'type'], got '${parsed.action}'. Raw: ` + rawText);
   }
 
+  // Handle alternative selector keys from smaller models (e.g. target, element, cssSelector)
+  if (!parsed.selector || typeof parsed.selector !== 'string') {
+    const altSelector = parsed.target || parsed.element || parsed.cssSelector || parsed.targetSelector || parsed.id;
+    if (altSelector && typeof altSelector === 'string') {
+      parsed.selector = altSelector.startsWith('#') || altSelector.startsWith('.') || altSelector.includes('[') 
+        ? altSelector 
+        : `#${altSelector}`;
+    }
+  }
+
   if (!parsed.selector || typeof parsed.selector !== 'string') {
     throw new Error(`Local model field 'selector' must be a non-empty string, got '${parsed.selector}'. Raw: ` + rawText);
   }
 
+  // Handle alternative value keys from smaller models (e.g. parcelId, trackingId, text)
+  if (parsed.value == null) {
+    const altValue = parsed.parcelId || parsed.trackingId || parsed.consignmentId || parsed.text || parsed.inputValue;
+    if (altValue != null) {
+      parsed.value = String(altValue);
+    }
+  }
+
   if (!parsed.reasoning || typeof parsed.reasoning !== 'string') {
-    throw new Error(`Local model field 'reasoning' must be a string, got '${parsed.reasoning}'. Raw: ` + rawText);
+    parsed.reasoning = `Executed ${parsed.action} on ${parsed.selector}`;
   }
 
   return {
