@@ -28,6 +28,8 @@ function parseVLMResponse(rawText) {
     throw new Error('Local model response JSON is not an object. Raw text: ' + rawText);
   }
 
+  const validActions = ['click', 'scroll', 'type'];
+
   // Action normalization for local 1.5B models (e.g., "Track Parcel" -> "type", "Fill" -> "type", "Press" -> "click")
   if (typeof parsed.action === 'string') {
     let rawAction = parsed.action.trim();
