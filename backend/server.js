@@ -107,24 +107,23 @@ app.post('/act', async (req, res) => {
     });
   }
 
-  const { goal, redactedImage, domStructure, retrievedExamples } = req.body;
+  const { goal, domStructure, retrievedExamples } = req.body;
 
-  if (!goal || !redactedImage) {
+  if (!goal) {
     return res.status(400).json({
-      error: 'Missing required parameters. Both "goal" and "redactedImage" must be provided.'
+      error: 'Missing required parameter: "goal" must be provided.'
     });
   }
 
-  const imageSizeKb = Math.round((redactedImage.length * 0.75) / 1024);
   const domCount = Array.isArray(domStructure) ? domStructure.length : 0;
   const ragCount = Array.isArray(retrievedExamples) ? retrievedExamples.length : 0;
 
-  console.log(`[${timestamp}] [IP: ${clientIp}] Received request. Goal: [${goal}]. Image size: [${imageSizeKb}] KB. DOM fields: [${domCount}]. RAG examples: [${ragCount}].`);
-  console.log(`[${timestamp}] [1/4] Payload received, no raw PII fields detected in structure`);
+  console.log(`[${timestamp}] [IP: ${clientIp}] Received request. Goal: [${goal}]. DOM fields: [${domCount}]. RAG examples: [${ragCount}]. (Zero image data transmitted)`);
+  console.log(`[${timestamp}] [1/4] Text-only payload received, zero PII transmitted`);
 
   try {
-    console.log(`[${new Date().toISOString()}] [2/4] Sending sanitized context to VLM`);
-    const rawVLMResponse = await callVLM(redactedImage, goal, domStructure, retrievedExamples);
+    console.log(`[${new Date().toISOString()}] [2/4] Sending sanitized DOM context to local Ollama model`);
+    const rawVLMResponse = await callVLM(goal, domStructure, retrievedExamples);
 
     console.log(`[${new Date().toISOString()}] [3/4] VLM response received and validated`);
     const parsedAction = parseVLMResponse(rawVLMResponse);

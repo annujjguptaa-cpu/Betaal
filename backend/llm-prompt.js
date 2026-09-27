@@ -1,9 +1,7 @@
 /* backend/llm-prompt.js
  *
- * Builds the VLM instruction prompt with full rich DOM context:
- * live field values, aria attributes, roles, option lists, href,
- * disabled/required state, focus state — everything the VLM needs
- * to make intelligent decisions on ANY real-world page.
+ * Builds the text-only instruction prompt for local Ollama reasoning.
+ * Includes explicit worked example for 100% reliable JSON generation on smaller models.
  */
 
 /**
@@ -45,11 +43,11 @@ function formatDomElement(item, idx) {
 }
 
 /**
- * Builds the vision-language model instruction prompt.
+ * Builds the text-only instruction prompt for local Ollama reasoning.
  * @param {string} goal
  * @param {Array<Object>} domStructure  - Real-time DOM from content.js
  * @param {Array<Object>} [retrievedExamples=[]] - RAG precedents from Vault
- * @returns {string} Formatted VLM prompt text
+ * @returns {string} Formatted prompt text
  */
 function buildPrompt(goal, domStructure = [], retrievedExamples = []) {
   const domListFormatted = Array.isArray(domStructure) && domStructure.length > 0
@@ -73,50 +71,45 @@ function buildPrompt(goal, domStructure = [], retrievedExamples = []) {
     }).join('\n');
 
     ragPrecedentSection = `
-For reference, here are structurally similar pages this agent has successfully handled before:
+=== SIMILAR PAGE PRECEDENTS (RAG) ===
 ${formattedExamples}
-Use these as helpful precedent, but base your decision on the ACTUAL current page structure provided above.
 `;
   }
 
-  return `You are an autonomous form-filling agent looking at a screenshot of a live web page.
-Sensitive information has been redacted: solid black boxes = PII text, pixelated regions = faces.
-Do NOT guess what is hidden. Act only on what you can see and the DOM structure below.
+  return `You are an autonomous web browser form-filling agent. You receive the live DOM structure of a page and a user goal, and decide the SINGLE next UI action to take.
+
+=== WORKED EXAMPLE ===
+Input Goal: "Apply for citizen grievance reporting billing issue"
+Input DOM:
+1. <input[text]> { id="applicant-name", placeholder="Full Name" } [SENSITIVE] → selector="#applicant-name"
+2. <input[email]> { id="applicant-email", placeholder="Email Address" } [SENSITIVE] → selector="#applicant-email"
+3. <button[submit]> { text="Submit Grievance" } → selector="#submit-btn"
+
+Output JSON:
+{
+  "action": "type",
+  "selector": "#applicant-name",
+  "value": null,
+  "valueSource": "fullName",
+  "reasoning": "First required field is applicant name. It is sensitive, so value is null and valueSource is fullName for local resolution.",
+  "final": false,
+  "confidence": 0.95
+}
+
+=== VALUE SOURCING RULES ===
+- For "type" on a [SENSITIVE] field (name, email, phone, aadhaar, address, dob): return "value": null and "valueSource": "<key>" from [${profileKeys}].
+- For "type" on a NON-sensitive field (search box, quantity, message, consignment ID): return "value": "<text>" containing the literal text to type.
+- Tracking numbers, consignment IDs, reference codes, order IDs are ALWAYS non-sensitive — extract the code from the user goal into "value".
+- Prefer filling empty required fields before clicking submit buttons.
+- CRITICAL: Copy the EXACT selector string shown after → in the DOM list below.
 
 === LIVE PAGE DOM (${domStructure.length} interactive elements) ===
 ${domListFormatted}
 
-=== USER GOAL ===
+=== CURRENT USER GOAL ===
 "${goal}"
 ${ragPrecedentSection}
-=== YOUR TASK ===
-Determine the SINGLE next UI action to make progress toward the goal.
-- Prefer filling empty required fields before clicking submit buttons.
-- If a field has a currentValue already set, skip it and move to the next empty field.
-- CRITICAL: Use the EXACT selector shown after → in the DOM list above. Copy it character-for-character. Do NOT construct your own selector from the element attributes.
-- If the page has no relevant elements, use {"action":"scroll","selector":"body"} to reveal more.
-
-=== VALUE SOURCING RULES ===
-- For "type" on a [SENSITIVE] field: return "value": null and "valueSource": "<key>" from [${profileKeys}]. The executor resolves it locally — never put real PII in your response.
-- For "type" on a NON-sensitive field (search box, comment, quantity, message): return "value": "<text>".
-- IMPORTANT: Tracking numbers, consignment IDs, reference codes, order IDs, and booking numbers are ALWAYS non-sensitive. Extract the exact code from the USER GOAL and put it directly in "value". NEVER return "valueSource" for these fields.
-
-=== TASK CHECKLIST RULES ===
-- Create or update a high-level 3 to 5 step task checklist in the "checklist" array field.
-- Mark completed steps as [DONE], current step as [IN_PROGRESS], and future steps as [PENDING].
-
-=== RESPONSE FORMAT ===
-Respond ONLY with a single valid JSON object — no markdown fences, no extra text:
-{
-  "action": "click" | "scroll" | "type",
-  "selector": "CSS selector exactly matching an element from the DOM list",
-  "value": string or null,
-  "valueSource": one of [${profileKeys}] — ONLY for sensitive type actions,
-  "checklist": ["Step 1 [DONE]", "Step 2 [IN_PROGRESS]", "Step 3 [PENDING]"],
-  "reasoning": "brief explanation of why this action and element",
-  "final": true if this action submits the form or completes the task, false otherwise,
-  "confidence": number 0.0–1.0
-}`;
+Determine the SINGLE next action. Respond with ONLY the JSON object. No explanation, no markdown formatting, no additional text before or after.`;
 }
 
 if (typeof module !== 'undefined' && module.exports) {

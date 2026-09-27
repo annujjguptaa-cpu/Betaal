@@ -560,7 +560,6 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           goal: agentLoopState.goal,
-          redactedImage: payloadImage,
           domStructure
         })
       });
@@ -692,7 +691,6 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   goal: correctionGoal,
-                  redactedImage: payloadImage,
                   domStructure: freshDom
                 })
               });
@@ -807,7 +805,6 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               goal: correctionGoal,
-              redactedImage: payloadImage,
               domStructure
             })
           });
@@ -973,7 +970,6 @@ async function runUserCorrectedAction(interventionId, correctionText) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         goal: correctedGoal,
-        redactedImage: payloadImage,
         domStructure
       })
     });

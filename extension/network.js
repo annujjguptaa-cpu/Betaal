@@ -51,15 +51,15 @@ async function sendToBackend(redactedImage, goal, domStructure = [], customRetri
       }
     }
 
+    // Zero-image payload: send only text goal, DOM structure, and RAG examples over the network
     const response = await fetch(`${backendUrl}/act`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        goal,
-        redactedImage,
-        domStructure,
+        goal: actualGoal,
+        domStructure: actualDom,
         retrievedExamples: Array.isArray(retrievedExamples) ? retrievedExamples : []
       })
     });
