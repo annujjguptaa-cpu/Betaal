@@ -108,7 +108,7 @@ app.post('/act', async (req, res) => {
     });
   }
 
-  const { goal, domStructure, retrievedExamples } = req.body;
+  const { goal, domStructure, retrievedExamples, context } = req.body;
 
   if (!goal) {
     return res.status(400).json({
@@ -124,16 +124,13 @@ app.post('/act', async (req, res) => {
 
   try {
     // ── STEP 1: Try the deterministic task router first ──
-    // For known portal patterns (IRCTC, India Post, Parivahan, ECI, UIDAI),
-    // skip the LLM entirely and return the correct action based on DOM state.
-    const routedAction = routeTask(goal, domStructure || []);
+    const routedAction = routeTask(goal, domStructure || [], context || {});
     if (routedAction) {
-      // Handle captcha pause signal
       if (routedAction.value === '__CAPTCHA_REQUIRED__') {
         console.log(`[${new Date().toISOString()}] [3/4] CAPTCHA detected — returning pause signal`);
         return res.status(422).json({
           error: 'CAPTCHA_REQUIRED',
-          message: 'A CAPTCHA was detected on the page. Please solve it manually in the browser and click Approve to continue.',
+          message: 'CAPTCHA detected — please solve it in the browser, then click "Approve & Continue".',
           selector: routedAction.selector
         });
       }

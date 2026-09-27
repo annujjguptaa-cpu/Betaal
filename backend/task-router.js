@@ -1,11 +1,10 @@
 /* backend/task-router.js
  *
  * Deterministic Task Router — bypasses the LLM for known multi-step portal workflows.
- * Matches the goal against known patterns, then inspects the live DOM to return the
- * exact correct next action — no model hallucination possible.
+ * Inspects live DOM liveValues to determine exactly which step to execute next.
  *
  * Supported task patterns:
- *   1. IRCTC train search (NDLS ↔ BCT etc.)
+ *   1. IRCTC train search
  *   2. India Post consignment tracking
  *   3. Parivahan / Sarathi driving license
  *   4. ECI voter roll search (EPIC)
@@ -13,50 +12,29 @@
  */
 
 /**
- * Try to match the goal to a known task and return the deterministic next action.
- * Returns null if no known pattern matches (LLM fallback will handle it).
- *
  * @param {string} goal
- * @param {Array<Object>} dom  - live DOM from content.js
+ * @param {Array<Object>} dom  - live DOM from content.js (with liveValue, tag, selector, etc.)
+ * @param {Object} [context]   - optional context from background loop (e.g. captchaSolved)
  * @returns {{ action, selector, value, valueSource, reasoning, final, confidence } | null}
  */
-function routeTask(goal, dom) {
+function routeTask(goal, dom, context = {}) {
   if (!goal || !Array.isArray(dom)) return null;
   const g = goal.toLowerCase();
 
-  // ─────────────────────────────────────────────────────────
-  // TASK 1 — IRCTC Train Search
-  // ─────────────────────────────────────────────────────────
-  if (/irctc|train|ndls|bct|mmct|rajdhani|shatabdi/.test(g) || /search.*train|train.*between|trains.*from/.test(g)) {
+  if (/irctc|train|ndls|bct|mmct|rajdhani|shatabdi|search.*train|train.*between|trains.*from/.test(g)) {
     return handleIRCTC(goal, dom);
   }
-
-  // ─────────────────────────────────────────────────────────
-  // TASK 2 — India Post Consignment Tracking
-  // ─────────────────────────────────────────────────────────
   if (/india post|consignment|parcel|tracking|track.*delivery|delivery.*status/.test(g)) {
-    return handleIndiaPost(goal, dom);
+    return handleIndiaPost(goal, dom, context);
   }
-
-  // ─────────────────────────────────────────────────────────
-  // TASK 3 — Parivahan / Driving License
-  // ─────────────────────────────────────────────────────────
   if (/driving licen|parivahan|sarathi|dl renewal|dl services|driving license/.test(g)) {
     return handleParivahan(goal, dom);
   }
-
-  // ─────────────────────────────────────────────────────────
-  // TASK 4 — ECI Voter / Electoral Roll
-  // ─────────────────────────────────────────────────────────
   if (/voter|electoral|epic|eci|nvsp|voter.*roll|voter.*card/.test(g)) {
     return handleECI(goal, dom);
   }
-
-  // ─────────────────────────────────────────────────────────
-  // TASK 5 — UIDAI Aadhaar Enrolment Status
-  // ─────────────────────────────────────────────────────────
   if (/aadhaar|uidai|enrolment|enrollment|aadhar status/.test(g)) {
-    return handleUIDAI(goal, dom);
+    return handleUIDAI(goal, dom, context);
   }
 
   return null;
@@ -66,31 +44,61 @@ function routeTask(goal, dom) {
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Find the first DOM element matching one of the given attribute patterns */
-function findEl(dom, matchers) {
+/**
+ * Find element matching one of the matchers across ALL DOM items.
+ * Matcher can be a string (substring) or regex tested against joined attribute hay.
+ */
+function findEl(dom, matchers, tagFilter = null) {
   for (const item of dom) {
+    if (tagFilter && !tagFilter.includes(item.tag)) continue;
     const hay = [item.id, item.name, item.placeholder, item.ariaLabel, item.text, item.className]
       .map(s => (s || '').toLowerCase()).join(' ');
     for (const m of matchers) {
-      if (typeof m === 'string' ? hay.includes(m) : m.test(hay)) {
-        return item;
-      }
+      if (typeof m === 'string' ? hay.includes(m) : m.test(hay)) return item;
     }
   }
   return null;
 }
 
-/** True if the element exists and its liveValue is non-empty */
+/**
+ * Find ONLY text-input or textarea elements (never buttons, radios, links, etc.)
+ */
+function findInputEl(dom, matchers) {
+  const INPUT_TYPES = ['text', 'search', 'tel', 'email', 'number', 'date', 'password', ''];
+  for (const item of dom) {
+    if (item.tag !== 'input' && item.tag !== 'textarea') continue;
+    if (!INPUT_TYPES.includes((item.type || '').toLowerCase())) continue;
+    const hay = [item.id, item.name, item.placeholder, item.ariaLabel, item.text, item.className]
+      .map(s => (s || '').toLowerCase()).join(' ');
+    for (const m of matchers) {
+      if (typeof m === 'string' ? hay.includes(m) : m.test(hay)) return item;
+    }
+  }
+  return null;
+}
+
+/** Find elements with specific ARIA role (options in autocomplete dropdowns, tabs, etc.) */
+function findRoleEl(dom, role, textHints) {
+  for (const item of dom) {
+    if ((item.role || '').toLowerCase() !== role) continue;
+    if (!textHints || textHints.length === 0) return item;
+    const hay = (item.text || item.ariaLabel || '').toLowerCase();
+    for (const hint of textHints) {
+      if (typeof hint === 'string' ? hay.includes(hint.toLowerCase()) : hint.test(hay)) return item;
+    }
+  }
+  return null;
+}
+
+/** True if element has a non-empty current value */
 function isFilled(el) {
   return el && el.liveValue && el.liveValue.trim().length > 0;
 }
 
-/** Extract a station code or name from the goal string */
+/** Extract origin and destination station codes from goal */
 function extractStations(goal) {
-  // "trains between NDLS and BCT" / "from NDLS to BCT"
   let origin = null, dest = null;
-
-  const betweenMatch = goal.match(/between\s+([A-Za-z0-9\s]+?)\s+and\s+([A-Za-z0-9\s]+?)(?:\s+for|\s+on|\s*$)/i);
+  const betweenMatch = goal.match(/between\s+([A-Za-z0-9]+(?:\s+[A-Za-z0-9]+)?)\s+and\s+([A-Za-z0-9]+)/i);
   if (betweenMatch) {
     origin = betweenMatch[1].trim().split(/\s+/)[0].toUpperCase();
     dest   = betweenMatch[2].trim().split(/\s+/)[0].toUpperCase();
@@ -104,144 +112,156 @@ function extractStations(goal) {
   return { origin, dest };
 }
 
-/** Extract a date for tomorrow formatted as DD/MM/YYYY */
+/** Tomorrow's date as DD/MM/YYYY */
 function tomorrowDate() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TASK 1: IRCTC
-// Step order: fill From → fill To → set Date → click Search
+// TASK 1: IRCTC Train Search
+// Sequence: type From → click From autocomplete option → type To → click To autocomplete
+//           → set Date → click Search
 // ─────────────────────────────────────────────────────────────────────────────
 function handleIRCTC(goal, dom) {
   const { origin, dest } = extractStations(goal);
 
-  // Origin field — look for "from", "origin", "stn" in empty inputs
-  const fromEl = findEl(dom, ['from', 'origin', 'source station', 'boarding', 'from station']);
-  const toEl   = findEl(dom, ['to', 'destination', 'to station', 'arrival']);
-  const dateEl = findEl(dom, ['journey date', 'date of journey', 'travel date', 'departure date', 'date', 'jrny date']);
-  const searchBtn = findEl(dom, ['search', 'find trains', 'get trains', 'check availability']);
+  // ── Strict field finders using precise aria-label / placeholder patterns ──
+  // IRCTC labels: "Enter From station. Input is Mandatory." / "Enter To station."
+  const fromEl = findInputEl(dom, [
+    /enter\s+from\s+station/i,
+    /from\s+station/i,
+    /origin\s+station/i,
+    /boarding\s+station/i,
+    /from.*mandatory/i
+  ]);
 
-  // Step 1: Fill "From" if empty
+  const toEl = findInputEl(dom, [
+    /enter\s+to\s+station/i,
+    /to\s+station/i,
+    /destination\s+station/i,
+    /arrival\s+station/i,
+    /to.*mandatory/i
+  ]);
+
+  const dateEl = findInputEl(dom, [
+    /journey\s+date/i,
+    /date\s+of\s+journey/i,
+    /travel\s+date/i,
+    /departure\s+date/i,
+    /jrny.*date/i
+  ]);
+
+  // Autocomplete option elements (role="option") — appear after typing in a field
+  const autocompleteOption = findRoleEl(dom, 'option', []) ||
+    findEl(dom, [/autocomplete.*item|p-autocomplete-item|station.*option/i], ['li', 'span']) ||
+    findEl(dom, ['.p-autocomplete-item', 'ui-autocomplete-item'], ['li']);
+
+  // Search/Submit button (not an input — it's a real button)
+  const searchBtn = findEl(dom, [
+    /\bsearch\s+train/i,
+    /find\s+train/i,
+    /search\b/i,
+    /get.*availability/i
+  ], ['button', 'a', 'span']);
+
+  // ── STEP 1: Type origin station if From field is empty ──
   if (fromEl && !isFilled(fromEl) && origin) {
-    return {
-      action: 'type',
-      selector: fromEl.selector,
-      value: origin,
-      valueSource: null,
-      reasoning: `Typing origin station code "${origin}" into the From/Origin field. Must fill this before searching.`,
-      final: false,
-      confidence: 0.99
-    };
+    return mk('type', fromEl.selector, origin, null,
+      `Typing origin station "${origin}" into From field (step 1 of 5).`, false, 0.99);
   }
 
-  // Step 2: Fill "To" if empty (origin is already filled)
+  // ── STEP 2: Click autocomplete dropdown to confirm From station ──
+  // After typing, IRCTC shows a dropdown — we must click it before moving to To
+  if (fromEl && isFilled(fromEl) && autocompleteOption) {
+    return mk('click', autocompleteOption.selector, null, null,
+      `Clicking autocomplete suggestion to confirm origin station "${fromEl.liveValue}".`, false, 0.99);
+  }
+
+  // ── STEP 3: Type destination station if To field is empty ──
   if (toEl && !isFilled(toEl) && dest) {
-    return {
-      action: 'type',
-      selector: toEl.selector,
-      value: dest,
-      valueSource: null,
-      reasoning: `Typing destination station code "${dest}" into the To/Destination field.`,
-      final: false,
-      confidence: 0.99
-    };
+    return mk('type', toEl.selector, dest, null,
+      `Typing destination station "${dest}" into To field (step 3 of 5).`, false, 0.99);
   }
 
-  // Step 3: Set date if empty
+  // ── STEP 4: Click autocomplete to confirm To station ──
+  if (toEl && isFilled(toEl) && autocompleteOption) {
+    return mk('click', autocompleteOption.selector, null, null,
+      `Clicking autocomplete suggestion to confirm destination station "${toEl.liveValue}".`, false, 0.99);
+  }
+
+  // ── STEP 5: Set journey date if empty ──
   if (dateEl && !isFilled(dateEl)) {
-    return {
-      action: 'type',
-      selector: dateEl.selector,
-      value: tomorrowDate(),
-      valueSource: null,
-      reasoning: `Setting journey date to tomorrow: ${tomorrowDate()}.`,
-      final: false,
-      confidence: 0.98
-    };
+    return mk('type', dateEl.selector, tomorrowDate(), null,
+      `Setting journey date to tomorrow: ${tomorrowDate()}.`, false, 0.98);
   }
 
-  // Step 4: Click Search
+  // ── STEP 6: Click Search ──
   if (searchBtn) {
-    return {
-      action: 'click',
-      selector: searchBtn.selector,
-      value: null,
-      valueSource: null,
-      reasoning: `Origin and destination are filled. Clicking Search to find trains.`,
-      final: true,
-      confidence: 0.99
-    };
+    return mk('click', searchBtn.selector, null, null,
+      `Origin and destination confirmed. Clicking Search to find trains.`, true, 0.99);
   }
 
-  return null; // fallback to LLM if page structure is unexpected
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TASK 2: India Post Tracking
-// Step order: type consignment ID → solve captcha (skip) → click track/search
+// TASK 2: India Post Consignment Tracking
+// Sequence: type consignment ID → captcha (pause for user) → click Search/Evaluate
+// Context: captchaSolved=true skips the pause and goes straight to clicking submit
 // ─────────────────────────────────────────────────────────────────────────────
-function handleIndiaPost(goal, dom) {
-  // Extract consignment code from goal
-  const codeMatch = goal.match(/\b([A-Z]{2}\d{9}[A-Z]{2})\b/i)    // EY567991513IN pattern
-    || goal.match(/consignment\s+id[:\s]+([A-Za-z0-9]+)/i)
-    || goal.match(/id[:\s]+([A-Za-z0-9]{10,25})\b/i);
+function handleIndiaPost(goal, dom, context) {
+  const codeMatch =
+    goal.match(/\b([A-Z]{2}\d{9}[A-Z]{2})\b/i) ||
+    goal.match(/consignment\s*id[:\s]+([A-Za-z0-9]+)/i) ||
+    goal.match(/id[:\s]+([A-Za-z0-9]{10,25})\b/i);
   const code = codeMatch ? codeMatch[1].toUpperCase() : null;
 
-  // Find consignment input — NOT radio button, NOT article checkbox
+  // Find the text input for consignment — explicitly exclude radio/checkbox/submit
   const consignmentInput = dom.find(item => {
     if (item.tag !== 'input') return false;
-    if (['radio', 'checkbox', 'submit', 'button', 'hidden'].includes(item.type)) return false;
-    const hay = [item.id, item.name, item.placeholder, item.ariaLabel, item.text, item.className]
-      .map(s => (s || '').toLowerCase()).join(' ');
-    return /consign|article|tracking|awb|barcode|number|track/i.test(hay);
+    if (['radio','checkbox','submit','button','hidden','file','reset','image'].includes((item.type||'').toLowerCase())) return false;
+    const hay = [item.id, item.name, item.placeholder, item.ariaLabel, item.className]
+      .map(s=>(s||'').toLowerCase()).join(' ');
+    return /consign|article\s*no|tracking|awb|barcode/i.test(hay);
   });
 
-  // If consignment input found and not yet filled
+  // Step 1: Type consignment ID if field is empty
   if (consignmentInput && !isFilled(consignmentInput) && code) {
-    return {
-      action: 'type',
-      selector: consignmentInput.selector,
-      value: code,
-      valueSource: null,
-      reasoning: `Typing consignment tracking ID "${code}" into the consignment number input (not radio button).`,
-      final: false,
-      confidence: 0.99
-    };
+    return mk('type', consignmentInput.selector, code, null,
+      `Typing consignment ID "${code}" into the Article/Consignment Number text input.`, false, 0.99);
   }
 
-  // Captcha field — pause for user
-  const captchaInput = findEl(dom, ['captcha', 'security code', 'evaluate', 'expression', 'verify']);
+  // If captchaSolved=true, user has already solved the captcha → click submit immediately
+  if (context.captchaSolved) {
+    const submitBtn = findEl(dom, [/evaluate|track|search|submit|go/i], ['button','input','a']);
+    if (submitBtn) {
+      return mk('click', submitBtn.selector, null, null,
+        `Captcha solved by user. Clicking Submit/Track to fetch delivery status.`, true, 0.99);
+    }
+  }
+
+  // Step 2: Detect captcha field — ONLY if not yet filled
+  const captchaInput = findInputEl(dom, [
+    /captcha/i,
+    /security\s*code/i,
+    /evaluate.*expression/i,
+    /enter.*image/i,
+    /type.*characters/i,
+    /verification\s*code/i
+  ]);
+
   if (captchaInput && !isFilled(captchaInput)) {
-    // We cannot solve captcha — signal to loop to pause
-    return {
-      action: 'type',
-      selector: captchaInput.selector,
-      value: '__CAPTCHA_REQUIRED__',
-      valueSource: null,
-      reasoning: `Captcha input detected. Agent cannot solve visual captcha — user must type the captcha answer manually.`,
-      final: false,
-      confidence: 0.99
-    };
+    return mk('type', captchaInput.selector, '__CAPTCHA_REQUIRED__', null,
+      `Captcha field detected and empty — user must solve it manually.`, false, 0.99);
   }
 
-  // Click the track/search button
-  const trackBtn = findEl(dom, ['track', 'search', 'evaluate', 'submit', 'go', 'check']);
-  if (trackBtn) {
-    return {
-      action: 'click',
-      selector: trackBtn.selector,
-      value: null,
-      valueSource: null,
-      reasoning: `Consignment ID filled. Clicking Track/Search button to fetch delivery status.`,
-      final: true,
-      confidence: 0.99
-    };
+  // Step 3: Click submit/evaluate (captcha must be filled now)
+  const submitBtn = findEl(dom, [/evaluate|track\s+now|search|submit|go\b/i], ['button','input','a']);
+  if (submitBtn) {
+    return mk('click', submitBtn.selector, null, null,
+      `Consignment ID entered. Clicking Submit to fetch delivery status.`, true, 0.99);
   }
 
   return null;
@@ -249,141 +269,100 @@ function handleIndiaPost(goal, dom) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TASK 3: Parivahan — Driving License
-// Step order: select state → click DL service → fill DL number → fill DOB → submit
+// Only searches <input> elements for sensitive fields — never links or buttons
 // ─────────────────────────────────────────────────────────────────────────────
 function handleParivahan(goal, dom) {
-  // State dropdown
-  const stateSelect = findEl(dom, ['state', 'select state', 'choose state', 'rto state']);
-  if (stateSelect && stateSelect.tag === 'select' && !isFilled(stateSelect)) {
-    return {
-      action: 'click',
-      selector: stateSelect.selector,
-      value: null,
-      valueSource: null,
-      reasoning: `Opening state dropdown to select your state before proceeding to DL services.`,
-      final: false,
-      confidence: 0.97
-    };
+  // State dropdown (actual <select> element)
+  const stateSelect = dom.find(item =>
+    item.tag === 'select' &&
+    /state|rto/i.test([item.id,item.name,item.ariaLabel,item.placeholder].join(' '))
+  );
+  if (stateSelect && !isFilled(stateSelect)) {
+    return mk('click', stateSelect.selector, null, null,
+      `Opening state dropdown to select your state before DL services.`, false, 0.97);
   }
 
-  // DL Number input
-  const dlInput = findEl(dom, ['driving licence', 'driving license', 'dl number', 'licence number', 'dl no', 'license no']);
+  // DL Number — MUST be an <input> element
+  const dlInput = findInputEl(dom, [
+    /driving\s*licen/i,
+    /dl\s*no/i,
+    /dl\s*number/i,
+    /license\s*no/i,
+    /licence\s*no/i,
+    /license\s*number/i
+  ]);
   if (dlInput && !isFilled(dlInput)) {
-    return {
-      action: 'type',
-      selector: dlInput.selector,
-      value: null,
-      valueSource: 'drivingLicense',
-      reasoning: `Filling Driving License number from local profile — never sent over network.`,
-      final: false,
-      confidence: 0.99
-    };
+    return mk('type', dlInput.selector, null, 'drivingLicense',
+      `Filling Driving License number from local profile.`, false, 0.99);
   }
 
-  // Date of Birth input
-  const dobInput = findEl(dom, ['date of birth', 'dob', 'd.o.b', 'birth date', 'born']);
+  // Date of Birth — MUST be an <input> element
+  const dobInput = findInputEl(dom, [
+    /date\s*of\s*birth/i,
+    /\bdob\b/i,
+    /d\.o\.b/i,
+    /birth\s*date/i
+  ]);
   if (dobInput && !isFilled(dobInput)) {
-    return {
-      action: 'type',
-      selector: dobInput.selector,
-      value: null,
-      valueSource: 'dateOfBirth',
-      reasoning: `Filling Date of Birth from local profile — never sent over network.`,
-      final: false,
-      confidence: 0.99
-    };
+    return mk('type', dobInput.selector, null, 'dateOfBirth',
+      `Filling Date of Birth from local profile.`, false, 0.99);
   }
 
-  // Submit
-  const submitBtn = findEl(dom, ['get dl details', 'proceed', 'continue', 'submit', 'verify']);
+  // Submit button
+  const submitBtn = findEl(dom, [
+    /get\s*dl\s*details/i,
+    /proceed/i,
+    /continue/i,
+    /submit/i,
+    /verify/i
+  ], ['button','input','a']);
   if (submitBtn) {
-    return {
-      action: 'click',
-      selector: submitBtn.selector,
-      value: null,
-      valueSource: null,
-      reasoning: `DL number and DOB filled. Clicking submit to fetch DL details.`,
-      final: true,
-      confidence: 0.99
-    };
+    return mk('click', submitBtn.selector, null, null,
+      `DL number and DOB filled. Clicking submit.`, true, 0.99);
   }
 
   return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TASK 4: ECI Voter / Electoral Roll Search
-// Step order: click "Search by EPIC" tab → select state → fill EPIC → fill captcha → click Search
+// TASK 4: ECI Electoral Roll Search
 // ─────────────────────────────────────────────────────────────────────────────
 function handleECI(goal, dom) {
-  // EPIC tab
-  const epicTab = findEl(dom, ['search by epic', 'epic number', 'epic no', 'voter id']);
+  // EPIC tab button
+  const epicTab = findEl(dom, [/search\s*by\s*epic/i, /epic\s*number/i], ['button','a','li','div']);
   if (epicTab && (epicTab.tag === 'button' || epicTab.tag === 'a' || epicTab.role === 'tab')) {
-    return {
-      action: 'click',
-      selector: epicTab.selector,
-      value: null,
-      valueSource: null,
-      reasoning: `Clicking "Search by EPIC" tab to search by Voter ID card number.`,
-      final: false,
-      confidence: 0.98
-    };
+    return mk('click', epicTab.selector, null, null,
+      `Clicking "Search by EPIC" tab.`, false, 0.98);
   }
 
-  // State dropdown
-  const stateSelect = findEl(dom, ['select state', 'state', 'choose state']);
-  if (stateSelect && stateSelect.tag === 'select' && !isFilled(stateSelect)) {
-    return {
-      action: 'click',
-      selector: stateSelect.selector,
-      value: null,
-      valueSource: null,
-      reasoning: `Opening state dropdown before EPIC search.`,
-      final: false,
-      confidence: 0.97
-    };
+  // State <select>
+  const stateSelect = dom.find(item =>
+    item.tag === 'select' &&
+    /state/i.test([item.id,item.name,item.ariaLabel,item.placeholder].join(' '))
+  );
+  if (stateSelect && !isFilled(stateSelect)) {
+    return mk('click', stateSelect.selector, null, null,
+      `Opening state dropdown before EPIC search.`, false, 0.97);
   }
 
   // EPIC number input
-  const epicInput = findEl(dom, ['epic', 'voter id', 'voter card', 'epic no', 'voter number', 'elector']);
-  if (epicInput && epicInput.tag === 'input' && !isFilled(epicInput)) {
-    return {
-      action: 'type',
-      selector: epicInput.selector,
-      value: null,
-      valueSource: 'epic',
-      reasoning: `Filling EPIC/Voter ID from local profile — never sent over network.`,
-      final: false,
-      confidence: 0.99
-    };
+  const epicInput = findInputEl(dom, [/epic/i, /voter\s*id/i, /voter\s*card/i, /elector/i]);
+  if (epicInput && !isFilled(epicInput)) {
+    return mk('type', epicInput.selector, null, 'epic',
+      `Filling EPIC Voter ID from local profile.`, false, 0.99);
   }
 
   // Captcha
-  const captchaInput = findEl(dom, ['captcha', 'security code', 'verification code', 'verify']);
+  const captchaInput = findInputEl(dom, [/captcha/i, /security\s*code/i, /verification/i]);
   if (captchaInput && !isFilled(captchaInput)) {
-    return {
-      action: 'type',
-      selector: captchaInput.selector,
-      value: '__CAPTCHA_REQUIRED__',
-      valueSource: null,
-      reasoning: `Captcha required. Agent paused — user must type captcha manually.`,
-      final: false,
-      confidence: 0.99
-    };
+    return mk('type', captchaInput.selector, '__CAPTCHA_REQUIRED__', null,
+      `Captcha required — user must solve it.`, false, 0.99);
   }
 
-  // Search button
-  const searchBtn = findEl(dom, ['search', 'find', 'submit', 'go']);
+  const searchBtn = findEl(dom, [/\bsearch\b/i, /\bfind\b/i, /\bsubmit\b/i], ['button','input','a']);
   if (searchBtn) {
-    return {
-      action: 'click',
-      selector: searchBtn.selector,
-      value: null,
-      valueSource: null,
-      reasoning: `EPIC number filled. Clicking Search to look up voter details.`,
-      final: true,
-      confidence: 0.99
-    };
+    return mk('click', searchBtn.selector, null, null,
+      `EPIC filled. Clicking Search.`, true, 0.99);
   }
 
   return null;
@@ -391,58 +370,52 @@ function handleECI(goal, dom) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TASK 5: UIDAI Aadhaar Enrolment Status
-// Step order: fill enrolment ID → fill captcha → click submit
 // ─────────────────────────────────────────────────────────────────────────────
-function handleUIDAI(goal, dom) {
-  // Extract 14-digit enrolment ID from goal if present
-  const enrolMatch = goal.match(/\b(\d{4}[\s\/]?\d{5}[\s\/]?\d{5})\b/) // 14-digit
-    || goal.match(/enrolment\s+id[:\s]+(\d[\d\s\/]+)/i)
-    || goal.match(/\b(\d{14})\b/);
-  const enrolId = enrolMatch ? enrolMatch[1].replace(/[\s\/]/g, '') : null;
+function handleUIDAI(goal, dom, context) {
+  const enrolMatch =
+    goal.match(/\b(\d{14})\b/) ||
+    goal.match(/enrolment\s*id[:\s]+([\d\s\/]+)/i);
+  const enrolId = enrolMatch ? enrolMatch[1].replace(/[\s\/]/g,'') : null;
 
-  // Enrolment ID input
-  const enrolInput = findEl(dom, ['enrolment', 'enrollment', 'srn', 'urn', 'eid', 'enrolment id', 'reference']);
+  const enrolInput = findInputEl(dom, [
+    /enrol+ment/i,
+    /\bsrn\b/i,
+    /\burn\b/i,
+    /\beid\b/i,
+    /aadhaar.*id/i,
+    /enrol.*id/i
+  ]);
   if (enrolInput && !isFilled(enrolInput)) {
-    return {
-      action: 'type',
-      selector: enrolInput.selector,
-      value: enrolId,
-      valueSource: enrolId ? null : 'enrolmentId',
-      reasoning: `Typing Aadhaar Enrolment ID "${enrolId || '(from profile)'}" into the enrolment status input.`,
-      final: false,
-      confidence: 0.99
-    };
+    return mk('type', enrolInput.selector, enrolId, enrolId ? null : 'enrolmentId',
+      `Typing Aadhaar Enrolment ID "${enrolId||'from profile'}".`, false, 0.99);
   }
 
-  // Captcha
-  const captchaInput = findEl(dom, ['captcha', 'security code', 'verification', 'text in image']);
+  if (context.captchaSolved) {
+    const submitBtn = findEl(dom, [/submit|check.*status|get.*status|verify|proceed/i], ['button','input','a']);
+    if (submitBtn) return mk('click', submitBtn.selector, null, null,
+      `Captcha solved. Clicking Submit to check status.`, true, 0.99);
+  }
+
+  const captchaInput = findInputEl(dom, [/captcha/i, /security\s*code/i, /text.*image/i]);
   if (captchaInput && !isFilled(captchaInput)) {
-    return {
-      action: 'type',
-      selector: captchaInput.selector,
-      value: '__CAPTCHA_REQUIRED__',
-      valueSource: null,
-      reasoning: `Captcha required. Agent paused — user must type captcha manually.`,
-      final: false,
-      confidence: 0.99
-    };
+    return mk('type', captchaInput.selector, '__CAPTCHA_REQUIRED__', null,
+      `Captcha required — user must solve it.`, false, 0.99);
   }
 
-  // Submit
-  const submitBtn = findEl(dom, ['submit', 'check status', 'get status', 'verify', 'proceed']);
+  const submitBtn = findEl(dom, [/submit|check.*status|get.*status|verify/i], ['button','input','a']);
   if (submitBtn) {
-    return {
-      action: 'click',
-      selector: submitBtn.selector,
-      value: null,
-      valueSource: null,
-      reasoning: `Enrolment ID filled. Clicking Submit to check Aadhaar status.`,
-      final: true,
-      confidence: 0.99
-    };
+    return mk('click', submitBtn.selector, null, null,
+      `Enrolment ID entered. Clicking Submit.`, true, 0.99);
   }
 
   return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACTORY HELPER
+// ─────────────────────────────────────────────────────────────────────────────
+function mk(action, selector, value, valueSource, reasoning, final, confidence) {
+  return { action, selector, value, valueSource, reasoning, final, confidence };
 }
 
 module.exports = { routeTask };

@@ -85,7 +85,8 @@ let agentLoopState = {
   activeTabUrl: 'Unknown Site',
   lastPipelineResult: null,
   domStabilityMs: 0,
-  pacingDelayMs: 0            // Module 76: Recorded pacing delay before capture
+  pacingDelayMs: 0,           // Module 76: Recorded pacing delay before capture
+  captchaSolved: false        // True after user solves a CAPTCHA intervention
 };
 
 /**
@@ -253,11 +254,17 @@ browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
       if (item) {
         item.status = 'approved';
         setPendingBadgeCount(0);
+        // If this was a CAPTCHA intervention, tell the task router to go straight to submit
+        if (item.isCaptcha) {
+          agentLoopState.captchaSolved = true;
+        }
         // Module 80: Update corresponding feed card status if exists
         const feedCard = agentLoopState.activityFeed.find(f => f.interventionId === id || (f.status === 'paused' && f.action === item.action?.action));
         if (feedCard) {
           feedCard.status = 'approved';
-          feedCard.subtitle = `Approved by user: Proceeding with [${feedCard.action}] on "${feedCard.selector}"`;
+          feedCard.subtitle = item.isCaptcha
+            ? `CAPTCHA solved — resuming to submit.`
+            : `Approved by user: Proceeding with [${feedCard.action}] on "${feedCard.selector}"`;
           broadcastFeedUpdate(feedCard);
         }
         broadcastLoopState();
@@ -389,6 +396,7 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
     agentLoopState.logs = [];
     agentLoopState.activityFeed = []; // Reset feed for new task run
     agentLoopState.pausedAction = null;
+    agentLoopState.captchaSolved = false; // Reset captcha state for fresh run
   }
 
   broadcastLoopState();
@@ -560,7 +568,10 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           goal: agentLoopState.goal,
-          domStructure
+          domStructure,
+          context: {
+            captchaSolved: agentLoopState.captchaSolved || false
+          }
         })
       });
 
@@ -591,8 +602,10 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
           reason: captchaReason,
           siteUrl: agentLoopState.activeTabUrl,
           action: null,
+          isCaptcha: true,  // Mark so APPROVE_INTERVENTION handler can set captchaSolved=true
           status: 'pending'
         });
+        agentLoopState.captchaSolved = false; // Will be set to true when user clicks Approve
         agentLoopState.isLocked = false;
         broadcastLoopState();
         return;
