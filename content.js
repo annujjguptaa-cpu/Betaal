@@ -136,23 +136,22 @@ function getDOMStructure() {
     const isSensitiveType = ['password', 'file'].includes(type);
     const isSensitive = isSensitiveType || sensitiveKeywords.some(kw => combinedStr.includes(kw));
 
-    // ── Compute a reliable CSS selector for this element ──
+    // ── Tag element with temporary data-betaal-idx attribute for 100% unique, bulletproof selection ──
+    el.setAttribute('data-betaal-idx', String(elIdx + 1));
+
+    // ── Compute a reliable, unique CSS selector for this element ──
     let computedSelector = '';
-    if (id) {
+    if (id && document.querySelectorAll(`#${CSS.escape(id)}`).length === 1) {
       computedSelector = `#${CSS.escape(id)}`;
-    } else if (name) {
-      computedSelector = `[name="${name}"]`;
-    } else if (placeholder) {
+    } else if (name && document.querySelectorAll(`${tag}[name="${CSS.escape(name)}"]`).length === 1) {
+      computedSelector = `${tag}[name="${name}"]`;
+    } else if (placeholder && document.querySelectorAll(`${tag}[placeholder="${CSS.escape(placeholder)}"]`).length === 1) {
       computedSelector = `${tag}[placeholder="${placeholder.replace(/"/g, '\\"')}"]`;
-    } else if (ariaLabel) {
+    } else if (ariaLabel && document.querySelectorAll(`[aria-label="${CSS.escape(ariaLabel)}"]`).length === 1) {
       computedSelector = `[aria-label="${ariaLabel.replace(/"/g, '\\"')}"]`;
-    } else if (type) {
-      // nth-of-type fallback for elements with same tag+type
-      const sameTypeSiblings = Array.from(document.querySelectorAll(`${tag}[type="${type}"]`));
-      const nthIdx = sameTypeSiblings.indexOf(el);
-      computedSelector = nthIdx >= 0 ? `${tag}[type="${type}"]:nth-of-type(${nthIdx + 1})` : `${tag}[type="${type}"]`;
     } else {
-      computedSelector = tag;
+      // Guaranteed unique fallback for complex sites (IRCTC, government portals, dynamic single page apps)
+      computedSelector = `${tag}[data-betaal-idx="${elIdx + 1}"]`;
     }
 
     return {
@@ -175,7 +174,7 @@ function getDOMStructure() {
       isFocused,
       isDisabled,
       isRequired,
-      selector: computedSelector,   // ← ready-to-use CSS selector for VLM
+      selector: computedSelector,   // ← 100% unique ready-to-use CSS selector for VLM
       rect: {
         left:   Math.round(rect.left   + scrollX),
         top:    Math.round(rect.top    + scrollY),

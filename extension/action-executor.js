@@ -14,7 +14,32 @@ async function executeAction(action) {
     return { success: false, error: 'Invalid action object: Missing selector.' };
   }
 
-  const el = document.querySelector(action.selector);
+  let el = null;
+  try {
+    el = document.querySelector(action.selector);
+  } catch (err) {
+    console.warn(`[ActionExecutor] Invalid selector syntax: "${action.selector}"`);
+  }
+
+  // Fallback selector resolution if document.querySelector fails or returns null
+  if (!el && action.selector) {
+    // 1. Try finding by data-betaal-idx if selector contains index or index string
+    const idxMatch = action.selector.match(/data-betaal-idx=["']?(\d+)["']?/) || action.selector.match(/(\d+)/);
+    if (idxMatch && idxMatch[1]) {
+      el = document.querySelector(`[data-betaal-idx="${idxMatch[1]}"]`);
+    }
+
+    // 2. Fuzzy text / placeholder / label search if still not found
+    if (!el) {
+      const cleanSel = action.selector.replace(/['"\\\[\]#]/g, '').toLowerCase();
+      const candidates = Array.from(document.querySelectorAll('input, button, a, textarea, select, [role="button"]'));
+      el = candidates.find(candidate => {
+        const txt = (candidate.innerText || candidate.textContent || candidate.placeholder || candidate.id || candidate.name || candidate.getAttribute('aria-label') || '').toLowerCase().trim();
+        return txt && (txt === cleanSel || cleanSel.includes(txt) || txt.includes(cleanSel));
+      });
+    }
+  }
+
   if (!el) {
     console.warn(`[ActionExecutor] Selector not found on page: "${action.selector}"`);
     return {
