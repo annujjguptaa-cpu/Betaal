@@ -21,6 +21,9 @@ async function loadFastScreenClassifier(modelPath = 'extension/models/mobilenet_
         return { session: null, provider: 'fast-heuristic' };
       }
     }
+  if (ortInstance && ortInstance.env && ortInstance.env.wasm) {
+    ortInstance.env.wasm.numThreads = 1;
+    ortInstance.env.wasm.proxy = false;
   }
 
   try {

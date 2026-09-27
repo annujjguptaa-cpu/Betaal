@@ -150,7 +150,9 @@ async function processScreenshot(imageDataUrl, domStructure = [], currentSiteUrl
   const piiStart = performance.now();
   let rawPiiRegions = [];
   try {
-    rawPiiRegions = await extractPiiFn(processingImage, domStructure);
+    const piiPromise = extractPiiFn(processingImage, domStructure);
+    const piiTimeout = new Promise(res => setTimeout(() => res([]), 2500));
+    rawPiiRegions = await Promise.race([piiPromise, piiTimeout]);
   } catch (ocrErr) {
     console.warn('[Pipeline Degradation] OCR / PII detection failed:', ocrErr.message);
     rawPiiRegions = [];

@@ -14,13 +14,17 @@ async function getNERPipeline() {
 
   _nerPipelineLoading = (async () => {
     try {
+      if (typeof window !== 'undefined' && window.ort && window.ort.env && window.ort.env.wasm) {
+        window.ort.env.wasm.numThreads = 1;
+        window.ort.env.wasm.proxy = false;
+      }
       const { pipeline } = await import('@xenova/transformers');
       const pipe = await pipeline('token-classification', 'Xenova/bert-base-NER');
       _nerPipeline = pipe;
       console.log('[NER Detector] BERT-NER pipeline loaded (Xenova/bert-base-NER).');
       return pipe;
     } catch (err) {
-      console.warn('[NER Detector] Failed to load BERT-NER pipeline:', err.message || err);
+      console.warn('[NER Detector] BERT-NER unavailable in extension context, relying on pattern regex + DOM detector:', err.message || err);
       _nerPipelineLoading = null;
       return null;
     }
