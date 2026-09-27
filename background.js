@@ -955,7 +955,8 @@ async function runUserCorrectedAction(interventionId, correctionText) {
         (el.id || el.name || el.placeholder || el.ariaLabel || '').toLowerCase().includes(kw)
       )
     );
-    const looksLikeCaptchaAnswer = /^[A-Za-z0-9]{3,10}$/.test(correctionText.trim());
+    // captchaAnswer: accepts alphanumeric answers AND short numeric answers (math captcha like "3+4=7" → user types "7")
+    const looksLikeCaptchaAnswer = correctionText.trim().length >= 1 && correctionText.trim().length <= 12;
 
     if (captchaEl && looksLikeCaptchaAnswer) {
       addLoopLog(`🔐 Captcha fast-path: typing "${correctionText}" into captcha field "${captchaEl.selector || captchaEl.name || captchaEl.id}"...`);
@@ -970,10 +971,15 @@ async function runUserCorrectedAction(interventionId, correctionText) {
       } catch (_) { captchaExecRes = { success: true }; }
 
       if (captchaExecRes && captchaExecRes.success) {
-        addLoopLog(`✅ Captcha answer typed. Loop will resume on next iteration.`);
-        agentLoopState.isLocked = false;
+        addLoopLog(`✅ Captcha answer typed. Resuming loop to click Submit...`);
+        // Mark captcha as solved so task router skips to Submit on next iteration
+        agentLoopState.captchaSolved = true;
         agentLoopState.consecutiveFailures = 0;
-        broadcastLoopState();
+        // Wait briefly for the page to register the typed value
+        await new Promise(r => setTimeout(r, 500));
+        // Resume the main loop — it will now call task router with captchaSolved=true → clicks Submit
+        agentLoopState.isLocked = false;
+        runBackgroundAgentLoop(agentLoopState.goal, agentLoopState.redactionEnabled, null);
         return;
       }
     }

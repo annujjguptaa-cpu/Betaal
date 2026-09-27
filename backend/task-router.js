@@ -233,9 +233,24 @@ function handleIndiaPost(goal, dom, context) {
       `Typing consignment ID "${code}" into the Article/Consignment Number text input.`, false, 0.99);
   }
 
+  // Helper to find India Post Track/Submit button (excluding refresh/reload buttons)
+  const findIndiaPostSubmit = () => {
+    return dom.find(item => {
+      if (!['button', 'input', 'a'].includes(item.tag)) return false;
+      const hay = [item.id, item.name, item.placeholder, item.ariaLabel, item.text, item.value, item.className]
+        .map(s => (s || '').toLowerCase()).join(' ');
+
+      // Strictly ignore captcha refresh / reset / reload buttons
+      if (/refresh|reload|reset|captcha.*ref|ref.*captcha/i.test(hay)) return false;
+
+      // Must match track / evaluate / search / submit
+      return /track\s*now|evaluate|search|submit|\bgo\b|btnsearch/i.test(hay);
+    });
+  };
+
   // If captchaSolved=true, user has already solved the captcha → click submit immediately
   if (context.captchaSolved) {
-    const submitBtn = findEl(dom, [/evaluate|track|search|submit|go/i], ['button','input','a']);
+    const submitBtn = findIndiaPostSubmit();
     if (submitBtn) {
       return mk('click', submitBtn.selector, null, null,
         `Captcha solved by user. Clicking Submit/Track to fetch delivery status.`, true, 0.99);
@@ -258,7 +273,7 @@ function handleIndiaPost(goal, dom, context) {
   }
 
   // Step 3: Click submit/evaluate (captcha must be filled now)
-  const submitBtn = findEl(dom, [/evaluate|track\s+now|search|submit|go\b/i], ['button','input','a']);
+  const submitBtn = findIndiaPostSubmit();
   if (submitBtn) {
     return mk('click', submitBtn.selector, null, null,
       `Consignment ID entered. Clicking Submit to fetch delivery status.`, true, 0.99);
