@@ -89,50 +89,112 @@ function parseVLMResponse(rawText, goal = '', domStructure = []) {
     action = rawActionStr.trim().toLowerCase();
   }
 
-  // 4. Selector resolution and DOM grounding
+  // 4. Selector resolution, Empty Input Priority, and DOM grounding
   let selector = typeof rawSelectorStr === 'string' ? rawSelectorStr.trim() : null;
 
-  // Clean selector syntax if model returned raw element description or id without prefix
   if (selector) {
     if (!selector.startsWith('#') && !selector.startsWith('.') && !selector.includes('[') && !selector.includes(' ')) {
       selector = `#${selector}`;
     }
   }
 
-  // Ground selector against domStructure if selector is missing or not matching
+  // ── ENFORCE EMPTY INPUT PRIORITY ──
+  // If the goal requires entering info (trains, tracking, form filling) and there are empty input fields,
+  // do NOT allow clicking submit/search or random non-input elements until empty inputs are filled!
+  if (Array.isArray(domStructure) && domStructure.length > 0) {
+    const textInputs = domStructure.filter(item => {
+      const tag = (item.tag || '').toLowerCase();
+      const type = (item.type || '').toLowerCase();
+      const isInputTag = tag === 'input' || tag === 'textarea';
+      const isInteractiveType = !['submit', 'button', 'hidden', 'radio', 'checkbox', 'image', 'reset'].includes(type);
+      return isInputTag && isInteractiveType;
+    });
+
+    const emptyInputs = textInputs.filter(item => !item.liveValue || item.liveValue.trim() === '');
+
+    if (emptyInputs.length > 0) {
+      const goalLower = goal.toLowerCase();
+      const isFormOrSearchGoal = /search|track|apply|find|check|book|fill|renew/i.test(goalLower);
+
+      if (isFormOrSearchGoal) {
+        // Find the best empty input field for the current step
+        let targetInput = null;
+
+        // Origin station match (e.g. NDLS / From)
+        if (goalLower.includes('between') || goalLower.includes('from')) {
+          targetInput = emptyInputs.find(item => {
+            const attrStr = `${item.id} ${item.name} ${item.placeholder} ${item.ariaLabel} ${item.text}`.toLowerCase();
+            return attrStr.includes('from') || attrStr.includes('origin') || attrStr.includes('source') || attrStr.includes('stn');
+          });
+        }
+
+        // Destination station match (e.g. BCT / To)
+        if (!targetInput && (goalLower.includes('to') || goalLower.includes('and'))) {
+          targetInput = emptyInputs.find(item => {
+            const attrStr = `${item.id} ${item.name} ${item.placeholder} ${item.ariaLabel} ${item.text}`.toLowerCase();
+            return attrStr.includes('to') || attrStr.includes('dest') || attrStr.includes('arrival');
+          });
+        }
+
+        // Tracking / Consignment input match
+        if (!targetInput && (goalLower.includes('track') || goalLower.includes('consignment') || goalLower.includes('parcel'))) {
+          targetInput = emptyInputs.find(item => {
+            const attrStr = `${item.id} ${item.name} ${item.placeholder} ${item.ariaLabel} ${item.text}`.toLowerCase();
+            return attrStr.includes('consign') || attrStr.includes('track') || attrStr.includes('article') || attrStr.includes('number') || attrStr.includes('code');
+          });
+        }
+
+        // Fallback to first empty input
+        if (!targetInput) {
+          targetInput = emptyInputs[0];
+        }
+
+        if (targetInput && targetInput.selector) {
+          action = 'type';
+          selector = targetInput.selector;
+
+          // Extract appropriate value for station or tracking number
+          const attrStr = `${targetInput.id} ${targetInput.name} ${targetInput.placeholder} ${targetInput.ariaLabel}`.toLowerCase();
+
+          if (attrStr.includes('from') || attrStr.includes('origin') || attrStr.includes('source')) {
+            const originMatch = goal.match(/between\s+([A-Za-z0-9]+)\s+and/i) || goal.match(/from\s+([A-Za-z0-9]+)\s+to/i);
+            if (originMatch) rawValueStr = originMatch[1].trim();
+          } else if (attrStr.includes('to') || attrStr.includes('dest') || attrStr.includes('arrival')) {
+            const destMatch = goal.match(/and\s+([A-Za-z0-9]+)(?:\s+for|\s+on|\s*$)/i) || goal.match(/to\s+([A-Za-z0-9]+)(?:\s+for|\s+on|\s*$)/i);
+            if (destMatch) rawValueStr = destMatch[1].trim();
+          } else if (attrStr.includes('consign') || attrStr.includes('track') || attrStr.includes('article')) {
+            const codeMatch = goal.match(/\b([A-Z0-9]{5,25})\b/i);
+            if (codeMatch) rawValueStr = codeMatch[1].trim();
+          }
+        }
+      }
+    }
+  }
+
+  // Ground selector against domStructure if selector is still missing
   if (!selector && Array.isArray(domStructure) && domStructure.length > 0) {
     const goalLower = goal.toLowerCase();
     const reasoningLower = combinedContext.toLowerCase();
 
-    // Strategy A: Find element matching action type & keywords
     let match = domStructure.find(item => {
       const itemText = (item.text || item.placeholder || item.id || item.ariaLabel || '').toLowerCase();
       if (action === 'type' && (item.tag === 'input' || item.tag === 'textarea')) {
-        return reasoningLower.includes(itemText) || goalLower.includes(itemText) || itemText.includes('number') || itemText.includes('consignment') || itemText.includes('search') || itemText.includes('id');
+        return reasoningLower.includes(itemText) || goalLower.includes(itemText);
       }
       if (action === 'click' && (item.tag === 'button' || item.type === 'submit')) {
-        return reasoningLower.includes(itemText) || goalLower.includes(itemText) || itemText.includes('track') || itemText.includes('search') || itemText.includes('submit');
+        return reasoningLower.includes(itemText) || goalLower.includes(itemText);
       }
       return false;
     });
 
-    // Strategy B: Pick first input/button depending on action
     if (!match) {
-      if (action === 'type') {
-        match = domStructure.find(item => item.tag === 'input' || item.tag === 'textarea');
-      } else if (action === 'click') {
-        match = domStructure.find(item => item.tag === 'button' || item.type === 'submit' || item.role === 'button');
-      }
+      match = action === 'type'
+        ? domStructure.find(item => item.tag === 'input' || item.tag === 'textarea')
+        : domStructure.find(item => item.tag === 'button' || item.type === 'submit' || item.role === 'button');
     }
 
-    // Strategy C: Absolute fallback to first DOM element
-    if (!match) {
-      match = domStructure[0];
-    }
-
-    if (match && match.selector) {
-      selector = match.selector;
-    }
+    if (!match) match = domStructure[0];
+    if (match && match.selector) selector = match.selector;
   }
 
   if (!selector) {

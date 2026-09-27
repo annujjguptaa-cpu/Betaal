@@ -115,11 +115,11 @@ Output JSON:
 }
 
 === ACTION & VALUE SOURCING RULES ===
-- CRITICAL RULE: "action" MUST BE STRICTLY ONE OF: "type", "click", or "scroll". Never invent custom action names like "Track Parcel" or "Search".
-- For "type" on a [SENSITIVE] field (name, email, phone, aadhaar, address, dob): return "value": null and "valueSource": "<key>" from [${profileKeys}].
-- For "type" on a NON-sensitive field (search box, quantity, message, consignment ID): return "value": "<text>" containing the literal text to type.
-- Tracking numbers, consignment IDs, reference codes, order IDs are ALWAYS non-sensitive — extract the code from the user goal into "value".
-- Prefer filling empty required fields before clicking submit buttons.
+- CRITICAL RULE 1: "action" MUST BE STRICTLY ONE OF: "type", "click", or "scroll". Never invent custom action names.
+- CRITICAL RULE 2 (EMPTY INPUT PRIORITY): IF ANY REQUIRED SEARCH OR FORM INPUT FIELD IS EMPTY (e.g., origin station, destination station, tracking number, name, DOB), YOUR ACTION MUST BE "type" ON THE FIRST EMPTY INPUT FIELD. NEVER CLICK SUBMIT OR SEARCH UNTIL ALL REQUIRED INPUT FIELDS ARE FILLED FIRST.
+- For "type" on a [SENSITIVE] field (name, email, phone, aadhaar, address, dob, epic, drivingLicense, enrolmentId): return "value": null and "valueSource": "<key>" from [${profileKeys}].
+- For "type" on a NON-sensitive field (search box, quantity, message, consignment ID, station code): return "value": "<text>" containing the literal text to type.
+- Tracking numbers, consignment IDs, station codes, reference numbers are ALWAYS non-sensitive — extract the code from the user goal into "value".
 - CRITICAL: Copy the EXACT selector string shown after → in the DOM list below.
 
 === LIVE PAGE DOM (${domStructure.length} interactive elements) ===
