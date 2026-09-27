@@ -40,6 +40,9 @@
   "web_accessible_resources": [
     {
       "resources": [
+        "extension/*.js",
+        "extension/detection/*.js",
+        "extension/redaction/*.js",
         "extension/models/*.onnx",
         "extension/models/*.bin",
         "*.wasm",
