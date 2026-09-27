@@ -340,17 +340,25 @@ function handleParivahan(goal, dom) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // TASK 4: ECI Electoral Roll Search
 // ─────────────────────────────────────────────────────────────────────────────
-function handleECI(goal, dom) {
-  // EPIC tab button
+function handleECI(goal, dom, context) {
+  // If on main landing page voters.eci.gov.in, click "Search in Electoral Roll" link/card
+  const searchRollLink = findEl(dom, [/search\s+in\s+electoral\s+roll/i, /electoral\s+search/i], ['a', 'button', 'div']);
+  if (searchRollLink && !dom.some(d => (d.id || d.name || d.placeholder || '').toLowerCase().includes('epic'))) {
+    return mk('click', searchRollLink.selector, null, null,
+      `Clicking "Search in Electoral Roll" link.`, false, 0.98);
+  }
+
+  // EPIC tab button (if not already active)
   const epicTab = findEl(dom, [/search\s*by\s*epic/i, /epic\s*number/i], ['button','a','li','div']);
   if (epicTab && (epicTab.tag === 'button' || epicTab.tag === 'a' || epicTab.role === 'tab')) {
     return mk('click', epicTab.selector, null, null,
       `Clicking "Search by EPIC" tab.`, false, 0.98);
   }
 
-  // State <select>
+  // State <select> (if present and empty)
   const stateSelect = dom.find(item =>
     item.tag === 'select' &&
     /state/i.test([item.id,item.name,item.ariaLabel,item.placeholder].join(' '))
@@ -360,21 +368,45 @@ function handleECI(goal, dom) {
       `Opening state dropdown before EPIC search.`, false, 0.97);
   }
 
+  // Extract EPIC from goal text if provided in prompt
+  const epicMatch = goal.match(/\b([A-Z]{3}\d{7})\b/i) || goal.match(/epic[:\s]+([A-Za-z0-9]+)/i);
+  const goalEpic = epicMatch ? epicMatch[1].toUpperCase() : null;
+
   // EPIC number input
   const epicInput = findInputEl(dom, [/epic/i, /voter\s*id/i, /voter\s*card/i, /elector/i]);
   if (epicInput && !isFilled(epicInput)) {
-    return mk('type', epicInput.selector, null, 'epic',
-      `Filling EPIC Voter ID from local profile.`, false, 0.99);
+    return mk('type', epicInput.selector, goalEpic, goalEpic ? null : 'epic',
+      `Filling EPIC Voter ID "${goalEpic || 'from profile'}".`, false, 0.99);
   }
 
-  // Captcha
+  // Helper to find ECI Search button (excluding captcha refresh)
+  const findEciSubmit = () => {
+    return dom.find(item => {
+      if (!['button', 'input', 'a'].includes(item.tag)) return false;
+      const hay = [item.id, item.name, item.placeholder, item.ariaLabel, item.text, item.value, item.className]
+        .map(s => (s || '').toLowerCase()).join(' ');
+      if (/refresh|reload|reset|captcha.*ref/i.test(hay)) return false;
+      return /\bsearch\b|find|submit/i.test(hay);
+    });
+  };
+
+  // If captchaSolved=true, skip captcha pause and click submit
+  if (context.captchaSolved) {
+    const submitBtn = findEciSubmit();
+    if (submitBtn) {
+      return mk('click', submitBtn.selector, null, null,
+        `Captcha solved by user. Clicking Search to find voter record.`, true, 0.99);
+    }
+  }
+
+  // Captcha input
   const captchaInput = findInputEl(dom, [/captcha/i, /security\s*code/i, /verification/i]);
   if (captchaInput && !isFilled(captchaInput)) {
     return mk('type', captchaInput.selector, '__CAPTCHA_REQUIRED__', null,
       `Captcha required — user must solve it.`, false, 0.99);
   }
 
-  const searchBtn = findEl(dom, [/\bsearch\b/i, /\bfind\b/i, /\bsubmit\b/i], ['button','input','a']);
+  const searchBtn = findEciSubmit();
   if (searchBtn) {
     return mk('click', searchBtn.selector, null, null,
       `EPIC filled. Clicking Search.`, true, 0.99);
@@ -405,8 +437,18 @@ function handleUIDAI(goal, dom, context) {
       `Typing Aadhaar Enrolment ID "${enrolId||'from profile'}".`, false, 0.99);
   }
 
+  const findUidaiSubmit = () => {
+    return dom.find(item => {
+      if (!['button', 'input', 'a'].includes(item.tag)) return false;
+      const hay = [item.id, item.name, item.placeholder, item.ariaLabel, item.text, item.value, item.className]
+        .map(s => (s || '').toLowerCase()).join(' ');
+      if (/refresh|reload|reset|captcha.*ref/i.test(hay)) return false;
+      return /submit|check.*status|get.*status|verify|proceed/i.test(hay);
+    });
+  };
+
   if (context.captchaSolved) {
-    const submitBtn = findEl(dom, [/submit|check.*status|get.*status|verify|proceed/i], ['button','input','a']);
+    const submitBtn = findUidaiSubmit();
     if (submitBtn) return mk('click', submitBtn.selector, null, null,
       `Captcha solved. Clicking Submit to check status.`, true, 0.99);
   }
@@ -417,7 +459,7 @@ function handleUIDAI(goal, dom, context) {
       `Captcha required — user must solve it.`, false, 0.99);
   }
 
-  const submitBtn = findEl(dom, [/submit|check.*status|get.*status|verify/i], ['button','input','a']);
+  const submitBtn = findUidaiSubmit();
   if (submitBtn) {
     return mk('click', submitBtn.selector, null, null,
       `Enrolment ID entered. Clicking Submit.`, true, 0.99);
