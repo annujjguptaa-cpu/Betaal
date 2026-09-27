@@ -494,16 +494,19 @@ function handleDigiLocker(goal, dom, context = {}) {
     }
   }
 
-  // 3. Navigate to "Issued Documents" tab if not on it
-  const issuedTab = findEl(dom, [/issued\s*documents/i, /issued\s*doc/i, /my\s*documents/i], ['a', 'button', 'li', 'span', 'div']);
-  const isOnIssuedTab = dom.some(item => {
-    const text = (item.text || item.ariaLabel || item.className || '').toLowerCase();
-    return /issued.*document/i.test(text) && (item.className || '').includes('active');
+  // 3. Check if we are already seeing document cards/rows (Aadhaar, Driving License, etc.)
+  const hasDocumentCards = dom.some(item => {
+    const text = (item.text || item.ariaLabel || item.id || item.className || '').toLowerCase();
+    return /aadhaar|licen|marksheet|vehicle|registration|issued/i.test(text);
   });
 
-  if (issuedTab && !isOnIssuedTab) {
-    return mk('click', issuedTab.selector, null, null,
-      `Navigating to "Issued Documents" tab in DigiLocker.`, false, 0.98);
+  // Only click "Issued Documents" tab if no document cards are present yet
+  if (!hasDocumentCards) {
+    const issuedTab = findEl(dom, [/issued\s*documents/i, /issued\s*doc/i, /my\s*documents/i], ['a', 'button', 'li', 'span', 'div']);
+    if (issuedTab) {
+      return mk('click', issuedTab.selector, null, null,
+        `Navigating to "Issued Documents" tab in DigiLocker.`, false, 0.98);
+    }
   }
 
   // 4. Target specific document requested in goal (Aadhaar, Driving License, Marksheet, etc.)
@@ -513,18 +516,15 @@ function handleDigiLocker(goal, dom, context = {}) {
   else if (/vehicle|rc\b|registration/i.test(g)) targetKeyword = 'registration';
   else if (/pan\b/i.test(g)) targetKeyword = 'pan';
 
-  // Search for the download PDF button associated with the requested document
+  // Search for direct PDF download button or link for the target document
   const downloadPdfBtn = dom.find(item => {
-    if (!['button', 'a', 'i', 'span', 'svg'].includes(item.tag)) return false;
-    const hay = [item.id, item.name, item.placeholder, item.ariaLabel, item.text, item.className, item.href]
+    const hay = [item.id, item.name, item.placeholder, item.ariaLabel, item.text, item.className, item.href, item.title]
       .map(s => (s || '').toLowerCase()).join(' ');
 
-    // Must be a PDF download action or download icon
-    const isDownload = /pdf|download|save|export|btn-pdf|icon-pdf/i.test(hay);
-    if (!isDownload) return false;
+    const isPdfOrDownload = /pdf|download|save|export|btn-pdf|icon-pdf|file-pdf|action-pdf/i.test(hay);
+    if (!isPdfOrDownload) return false;
 
-    // Matches target document type or general document card
-    return new RegExp(targetKeyword, 'i').test(hay) || /issued|document|card|file/i.test(hay);
+    return new RegExp(targetKeyword, 'i').test(hay) || /issued|document|card|file|aadhaar/i.test(hay);
   });
 
   if (downloadPdfBtn) {
@@ -532,11 +532,24 @@ function handleDigiLocker(goal, dom, context = {}) {
       `Clicking Download PDF button for ${targetKeyword.toUpperCase()} in DigiLocker.`, true, 0.99);
   }
 
-  // Fallback: Click the first available PDF / Download link on the Issued Documents page
-  const fallbackDownload = findEl(dom, [/pdf/i, /download/i, /get\s*pdf/i], ['button', 'a', 'span']);
+  // DigiLocker 3-dots / action menu button next to the target document
+  const actionMenuBtn = dom.find(item => {
+    const hay = [item.id, item.name, item.ariaLabel, item.text, item.className, item.title]
+      .map(s => (s || '').toLowerCase()).join(' ');
+    const isMenuIcon = /dots|menu|option|ellipsis|more|action|dropdown/i.test(hay);
+    return isMenuIcon && (new RegExp(targetKeyword, 'i').test(hay) || /aadhaar|doc/i.test(hay));
+  });
+
+  if (actionMenuBtn) {
+    return mk('click', actionMenuBtn.selector, null, null,
+      `Clicking document options menu for ${targetKeyword.toUpperCase()} in DigiLocker.`, false, 0.98);
+  }
+
+  // Fallback: Any PDF / Download link or button on the page
+  const fallbackDownload = findEl(dom, [/pdf/i, /download/i, /get\s*pdf/i, /save/i], ['button', 'a', 'span', 'i', 'div']);
   if (fallbackDownload) {
     return mk('click', fallbackDownload.selector, null, null,
-      `Clicking PDF Download button on Issued Documents page.`, true, 0.95);
+      `Clicking PDF Download button on DigiLocker page.`, true, 0.95);
   }
 
   return null;

@@ -183,6 +183,42 @@ function getDOMStructure() {
       }
     };
   });
+
+  // ── Module 73+: Detect avatar / profile pictures / top-right user icons for guaranteed face redaction ──
+  const avatarElements = document.querySelectorAll(
+    'img, svg, div[class*="avatar"], div[class*="profile"], div[class*="user"], a[class*="profile"], a[class*="user"], [aria-label*="profile" i], [aria-label*="account" i], [aria-label*="user" i]'
+  );
+  const avatarRects = [];
+  const scrollX = window.scrollX || window.pageXOffset || 0;
+  const scrollY = window.scrollY || window.pageYOffset || 0;
+  const screenW = window.innerWidth || 1200;
+
+  avatarElements.forEach(el => {
+    try {
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      if (rect.width > 300 || rect.height > 300) return; // ignore massive layout containers
+
+      const hay = [el.id, el.className, el.getAttribute('alt'), el.getAttribute('title'), el.getAttribute('src'), el.getAttribute('aria-label')]
+        .map(s => (s || '').toLowerCase()).join(' ');
+
+      const isProfileKeywords = /avatar|profile|userpic|user_pic|user-icon|header-profile|user_thumb|user-photo|my-account|account-icon/i.test(hay);
+      const isTopRightHeader = rect.top < 180 && rect.left > (screenW * 0.5) && rect.width >= 16 && rect.width <= 120;
+
+      if (isProfileKeywords || isTopRightHeader) {
+        avatarRects.push({
+          x: Math.round(rect.left + scrollX),
+          y: Math.round(rect.top + scrollY),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        });
+      }
+    } catch (_) {}
+  });
+
+  // Attach avatarRects to the returned array property
+  domElements.avatarRects = avatarRects;
+  return domElements;
 }
 
 /**

@@ -180,6 +180,22 @@ async function processScreenshot(imageDataUrl, domStructure = [], currentSiteUrl
   }
   const faceTiming = Math.round(performance.now() - faceStart);
 
+  // ── Combine DOM avatarRects (top-right header profile pics, user icons, avatar elements) ──
+  if (Array.isArray(domStructure.avatarRects) && domStructure.avatarRects.length > 0) {
+    for (const rect of domStructure.avatarRects) {
+      rawFaceRegions.push({
+        boundingBox: {
+          x: Math.round(rect.x * totalDetectorScale),
+          y: Math.round(rect.y * totalDetectorScale),
+          width: Math.round(rect.width * totalDetectorScale),
+          height: Math.round(rect.height * totalDetectorScale)
+        },
+        confidence: 0.99,
+        source: 'dom-avatar'
+      });
+    }
+  }
+
   // =========================================================================
   // Scale bounding boxes back up to original image resolution (Modules 73 & 74)
   // =========================================================================

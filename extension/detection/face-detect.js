@@ -498,13 +498,13 @@ async function detectFaces(
             return;
           }
 
-          // Decode bounding boxes
+          // Decode bounding boxes with lowered threshold (0.15) to detect small header avatars
           const detections = decodeBlazeFaceOutputs(
             regressorData,
             classifierData,
             origWidth,
             origHeight,
-            0.5
+            0.15
           );
 
           // NMS
