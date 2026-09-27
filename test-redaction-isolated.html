@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Isolated Redaction Pipeline Test</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #111; color: #eee; }
+    .container { display: flex; gap: 20px; margin-top: 20px; }
+    .box { flex: 1; border: 1px solid #444; padding: 10px; background: #222; }
+    img { max-width: 100%; border: 1px solid #666; }
+    pre { background: #000; padding: 15px; color: #0f0; overflow-x: auto; max-height: 300px; }
+    h2 { color: #4da6ff; }
+  </style>
+
+  <!-- Load script dependencies in exact order -->
+  <script src="extension/browser-polyfill.js"></script>
+  <script src="extension/policy-book.js"></script>
+  <script src="extension/redaction/redact.js"></script>
+  <script src="extension/detection/pii-patterns.js"></script>
+  <script src="extension/detection/pii-detector.js"></script>
+  <script src="extension/detection/face-detect.js"></script>
+  <script src="extension/detection/vit-classifier-fast.js"></script>
+  <script src="extension/detection/vit-classifier.js"></script>
+  <script src="extension/pipeline.js"></script>
+</head>
+<body>
+  <h1>Phase 1: Standalone Redaction Pipeline Isolation Test</h1>
+  <p>Testing <code>processScreenshot(imageDataUrl, domStructure)</code> completely independent of network.js, background.js, and backend LLM.</p>
+
+  <button id="runBtn" style="padding: 10px 20px; font-size: 16px; cursor: pointer;">Run Isolated Pipeline Test</button>
+
+  <h2>Full Output Object:</h2>
+  <pre id="outputLog">Click "Run Isolated Pipeline Test" to execute...</pre>
+
+  <div class="container">
+    <div class="box">
+      <h3>Original Image (Planted PII & Face)</h3>
+      <img id="origImg" alt="Original Canvas Image" />
+    </div>
+    <div class="box">
+      <h3>Redacted Output Image</h3>
+      <img id="redactedImg" alt="Redacted Output Image" />
+    </div>
+  </div>
+
+  <script>
+    // Generate a test canvas with planted PII text + face
+    function generateTestImage() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 600;
+      const ctx = canvas.getContext('2d');
+
+      // Background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 800, 600);
+
+      // Header
+      ctx.fillStyle = '#003366';
+      ctx.fillRect(0, 0, 800, 60);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillText('Passport Application Review - Step 4', 20, 38);
+
+      // Top-right Profile Avatar Icon (Header face avatar)
+      ctx.fillStyle = '#ff9999';
+      ctx.beginPath();
+      ctx.arc(750, 30, 20, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#333333';
+      ctx.fillRect(742, 20, 16, 8); // eyes area
+
+      // Form Text Fields (Planted PII)
+      ctx.fillStyle = '#000000';
+      ctx.font = '16px monospace';
+      ctx.fillText('Full Name: Ramesh Kumar', 40, 100);
+      ctx.fillText('Aadhaar Number: 4521 8901 2345', 40, 150);
+      ctx.fillText('Phone Number: +91 98765 43210', 40, 200);
+      ctx.fillText('Voter EPIC ID: ABC1234567', 40, 250);
+      ctx.fillText('Address: Flat 402, MG Road, Sector 15, Gurgaon', 40, 300);
+      ctx.fillText('Date of Birth: 15/08/1990', 40, 350);
+
+      // Applicant Photo Box (Main Face)
+      ctx.fillStyle = '#cccccc';
+      ctx.fillRect(550, 100, 180, 220);
+      ctx.fillStyle = '#666666';
+      ctx.beginPath();
+      ctx.arc(640, 180, 45, 0, Math.PI * 2); // Face head
+      ctx.fill();
+      ctx.fillRect(590, 230, 100, 70); // Shoulders
+
+      return canvas.toDataURL('image/png');
+    }
+
+    document.getElementById('runBtn').addEventListener('click', async () => {
+      const outputLog = document.getElementById('outputLog');
+      outputLog.textContent = 'Running processScreenshot()...';
+
+      const origDataUrl = generateTestImage();
+      document.getElementById('origImg').src = origDataUrl;
+
+      // Mock DOM structure matching content.js getDOMStructure() output
+      const domStructure = [
+        {
+          tag: 'input',
+          type: 'text',
+          name: 'aadhaar',
+          liveValue: '4521 8901 2345',
+          sensitive: true,
+          rect: { left: 40, top: 135, width: 300, height: 25 }
+        },
+        {
+          tag: 'input',
+          type: 'text',
+          name: 'phone',
+          liveValue: '+91 98765 43210',
+          sensitive: true,
+          rect: { left: 40, top: 185, width: 300, height: 25 }
+        },
+        {
+          tag: 'input',
+          type: 'text',
+          name: 'epic',
+          liveValue: 'ABC1234567',
+          sensitive: true,
+          rect: { left: 40, top: 235, width: 300, height: 25 }
+        },
+        {
+          tag: 'input',
+          type: 'text',
+          name: 'address',
+          liveValue: 'Flat 402, MG Road, Sector 15, Gurgaon',
+          sensitive: true,
+          rect: { left: 40, top: 285, width: 450, height: 25 }
+        }
+      ];
+
+      // Attach avatarRects for header profile avatar & applicant photo
+      domStructure.avatarRects = [
+        { x: 730, y: 10, width: 40, height: 40 },
+        { x: 550, y: 100, width: 180, height: 220 }
+      ];
+
+      try {
+        const result = await processScreenshot(origDataUrl, domStructure, 'demo-page');
+
+        console.log('=== FULL PIPELINE RESULT OBJECT ===', result);
+
+        outputLog.textContent = JSON.stringify({
+          counts: result.counts,
+          timing: result.timing,
+          detectedRegions: result.allDetectedRegions,
+          activeRedactedRegions: result.activeRedactedRegions,
+          hasRedactedImage: !!result.redactedImage,
+          redactedImageLength: result.redactedImage ? result.redactedImage.length : 0
+        }, null, 2);
+
+        if (result.redactedImage) {
+          document.getElementById('redactedImg').src = result.redactedImage;
+        }
+      } catch (err) {
+        console.error('Pipeline Execution Error:', err);
+        outputLog.textContent = 'ERROR: ' + err.stack;
+      }
+    });
+  </script>
+</body>
+</html>

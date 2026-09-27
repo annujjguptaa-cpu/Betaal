@@ -1,4 +1,12 @@
 importScripts('extension/browser-polyfill.js');
+importScripts('extension/policy-book.js');
+importScripts('extension/redaction/redact.js');
+importScripts('extension/detection/pii-patterns.js');
+importScripts('extension/detection/pii-detector.js');
+importScripts('extension/detection/face-detect.js');
+importScripts('extension/detection/vit-classifier-fast.js');
+importScripts('extension/detection/vit-classifier.js');
+importScripts('extension/pipeline.js');
 importScripts('extension/rag-retrieval.js');
 
 console.log('Betaal background loaded');
@@ -555,9 +563,18 @@ async function runBackgroundAgentLoop(goal, redactionEnabled = true, resumeActio
         } catch (e) {}
       }
 
+      // Stage 2b: Execute Redaction Pipeline in Background Service Worker
+      if (typeof processScreenshot === 'function' && agentLoopState.redactionEnabled) {
+        try {
+          addLoopLog('🛡️ Running local PII & face redaction pipeline...');
+          const pResult = await processScreenshot(dataUrl, domStructure, activeTab.url);
+          agentLoopState.lastPipelineResult = pResult;
+        } catch (pErr) {
+          console.warn('[Background] Pipeline execution warning:', pErr.message);
+        }
+      }
+
       // Stage 3: Send Redacted Context to Backend VLM
-      // Note: If popup is open, popup runs full local canvas pipeline and provides cached result
-      // In background, send payload to backend
       addLoopLog('⏳ Querying Backend VLM server at ' + BACKEND_URL + '...');
 
       let payloadImage = dataUrl;
