@@ -231,9 +231,15 @@ async function processScreenshot(imageDataUrl, domStructure = [], currentSiteUrl
       case 'address': return 'address';
       case 'email': return 'email';
       case 'pan': return 'pan';
+      case 'epic': return 'epic';
+      case 'driving-license': return 'drivingLicense';
+      case 'enrolment-id': return 'enrolmentId';
+      case 'passport': return 'passport';
+      case 'dob': return 'dob';
+      case 'sensitive-field': return 'sensitiveField';
       case 'possible-id-number': return 'possibleIdNumber';
       case 'face': return 'faces';
-      default: return 'address';
+      default: return 'sensitiveField';
     }
   };
 

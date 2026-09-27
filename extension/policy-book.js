@@ -7,6 +7,12 @@ const DEFAULT_POLICY = {
     address: { enabled: true, method: 'blackfill' },
     email: { enabled: true, method: 'blackfill' },
     pan: { enabled: true, method: 'blackfill' },
+    epic: { enabled: true, method: 'blackfill' },
+    drivingLicense: { enabled: true, method: 'blackfill' },
+    enrolmentId: { enabled: true, method: 'blackfill' },
+    passport: { enabled: true, method: 'blackfill' },
+    dob: { enabled: true, method: 'blackfill' },
+    sensitiveField: { enabled: true, method: 'blackfill' },
     possibleIdNumber: { enabled: true, method: 'blackfill' },
     faces: { enabled: true, method: 'blur' }
   },
